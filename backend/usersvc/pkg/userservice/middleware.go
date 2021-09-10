@@ -19,9 +19,9 @@ type loggingMiddleware struct {
 	next   Service
 }
 
-func (mw loggingMiddleware) User(ctx context.Context, username, password string) (id int, err error) {
+func (mw loggingMiddleware) UserID(ctx context.Context, username, password string) (id int, err error) {
 	defer func() {
 		mw.logger.Log("method", "User", "username", username, "err", err)
 	}()
-	return mw.next.User(ctx, username, password)
+	return mw.next.UserID(ctx, username, password)
 }

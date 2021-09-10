@@ -8,7 +8,7 @@ import (
 )
 
 type Service interface {
-	User(ctx context.Context, username, password string) (int, error)
+	UserID(ctx context.Context, username, password string) (int, error)
 }
 
 func New(logger log.Logger) Service {
@@ -26,7 +26,7 @@ func NewBasicService() Service {
 
 type basicService struct{}
 
-func (s basicService) User(_ context.Context, username, password string) (int, error) {
+func (s basicService) UserID(_ context.Context, username, password string) (int, error) {
 	if username == "" || password == "" {
 		return 0, ErrInvalidArgument
 	}
