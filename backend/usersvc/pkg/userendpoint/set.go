@@ -23,6 +23,15 @@ func New(svc userservice.Service, logger log.Logger) Set {
 	}
 }
 
+func (s Set) UserID(ctx context.Context, name, password string) (int, error) {
+	resp, err := s.UserIDEndpoint(ctx, UserIDRequest{Name: name, Password: password})
+	if err != nil {
+		return 0, err
+	}
+	response := resp.(UserIDResponse)
+	return response.ID, response.Err
+}
+
 func MakeUserIDEndpoint(s userservice.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
 		req := request.(UserIDRequest)
