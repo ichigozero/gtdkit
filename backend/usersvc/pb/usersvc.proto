@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+option go_package = "github.com/ichigozero/gtdkit/backend/usersvc/pb";
+
+package pb;
+
+service User {
+  rpc UserID (UserIDRequest) returns (UserIDReply) {}
+}
+
+message UserIDRequest {
+  string name = 1;
+  string password = 2;
+}
+
+message UserIDReply {
+  int64 id = 1;
+  string err = 2;
+}
