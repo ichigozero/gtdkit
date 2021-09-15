@@ -23,7 +23,7 @@ func New(svc userservice.Service, logger log.Logger) Set {
 	}
 }
 
-func (s Set) UserID(ctx context.Context, name, password string) (int, error) {
+func (s Set) UserID(ctx context.Context, name, password string) (uint64, error) {
 	resp, err := s.UserIDEndpoint(ctx, UserIDRequest{Name: name, Password: password})
 	if err != nil {
 		return 0, err
@@ -45,6 +45,8 @@ type UserIDRequest struct {
 }
 
 type UserIDResponse struct {
-	ID  int   `json:"id"`
-	Err error `json:"err"`
+	ID  uint64 `json:"id"`
+	Err error  `json:"-"`
 }
+
+func (r UserIDResponse) Failed() error { return r.Err }

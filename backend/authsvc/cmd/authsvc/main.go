@@ -1,36 +1,36 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
 	"text/tabwriter"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	consulsd "github.com/go-kit/kit/sd/consul"
-	kitgrpc "github.com/go-kit/kit/transport/grpc"
 	"github.com/hashicorp/consul/api"
-	"github.com/ichigozero/gtdkit/backend/usersvc/db/gorm"
-	"github.com/ichigozero/gtdkit/backend/usersvc/pb"
-	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/userendpoint"
-	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/userservice"
-	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/usertransport"
+	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authendpoint"
+	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authservice"
+	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authtransport"
+	userclient "github.com/ichigozero/gtdkit/backend/usersvc/client"
 	"github.com/oklog/oklog/pkg/group"
 	"github.com/twinj/uuid"
-	"google.golang.org/grpc"
-	"gorm.io/driver/sqlite"
-	stdgorm "gorm.io/gorm"
 )
 
 func main() {
-	fs := flag.NewFlagSet("usersvc", flag.ExitOnError)
+	fs := flag.NewFlagSet("authsvc", flag.ExitOnError)
 	var (
-		grpcAddr   = fs.String("grpc.addr", ":8080", "gRPC listen address")
-		consulAddr = fs.String("consul.addr", "", "Consul agent address")
+		httpAddr     = fs.String("http.addr", ":8081", "HTTP listen address")
+		consulAddr   = fs.String("consul.addr", "", "Consul agent address")
+		retryMax     = flag.Int("retry.max", 3, "per-request retries to different instances")
+		retryTimeout = flag.Duration("retry.timeout", 500*time.Millisecond, "per-request timeout, including retries")
 	)
 
 	fs.Usage = usageFor(fs, os.Args[0]+" [flags]")
@@ -43,20 +43,7 @@ func main() {
 		logger = log.With(logger, "caller", log.DefaultCaller)
 	}
 
-	db, err := stdgorm.Open(sqlite.Open("gorm.db"), &stdgorm.Config{})
-	if err != nil {
-		logger.Log("err", err)
-		os.Exit(1)
-	}
-
-	userRepository := gorm.NewUserRepository(db)
-
-	var (
-		service    = userservice.New(userRepository, logger)
-		endpoints  = userendpoint.New(service, logger)
-		grpcServer = usertransport.NewGRPCServer(endpoints, logger)
-	)
-
+	var client consulsd.Client
 	var registrar *consulsd.Registrar
 	{
 		consulConfig := api.DefaultConfig()
@@ -69,36 +56,47 @@ func main() {
 			os.Exit(1)
 		}
 
-		_, port, _ := net.SplitHostPort(*grpcAddr)
+		_, port, _ := net.SplitHostPort(*httpAddr)
 		p, _ := strconv.Atoi(port)
 		asr := &api.AgentServiceRegistration{
 			ID:      uuid.NewV4().String(),
-			Name:    "usersvc",
+			Name:    "authsvc",
 			Address: "localhost",
 			Port:    p,
 		}
 
-		client := consulsd.NewClient(consulClient)
+		client = consulsd.NewClient(consulClient)
 		registrar = consulsd.NewRegistrar(client, asr, logger)
 		registrar.Register()
 		defer registrar.Deregister()
 	}
 
+	userEndpoints, _ := userclient.New(client, logger, *retryMax, *retryTimeout)
+
+	var service authservice.Service
+	{
+		service = authservice.New(authservice.NewTokenizer(), logger)
+		service = authservice.ProxingMiddleware(context.Background(), userEndpoints.UserIDEndpoint)(service)
+	}
+
+	var (
+		endpoints   = authendpoint.New(service, logger)
+		httpHandler = authtransport.NewHTTPHandler(endpoints, logger)
+	)
+
 	var g group.Group
 	{
-		// The gRPC listener mounts the Go kit gRPC server we created.
-		grpcListener, err := net.Listen("tcp", *grpcAddr)
+		// The HTTP listener mounts the Go kit HTTP handler we created.
+		httpListener, err := net.Listen("tcp", *httpAddr)
 		if err != nil {
-			logger.Log("transport", "gRPC", "during", "Listen", "err", err)
+			logger.Log("transport", "HTTP", "during", "Listen", "err", err)
 			os.Exit(1)
 		}
 		g.Add(func() error {
-			logger.Log("transport", "gRPC", "addr", *grpcAddr)
-			baseServer := grpc.NewServer(grpc.UnaryInterceptor(kitgrpc.Interceptor))
-			pb.RegisterUserServer(baseServer, grpcServer)
-			return baseServer.Serve(grpcListener)
+			logger.Log("transport", "HTTP", "addr", *httpAddr)
+			return http.Serve(httpListener, httpHandler)
 		}, func(error) {
-			grpcListener.Close()
+			httpListener.Close()
 		})
 	}
 	{
