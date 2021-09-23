@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/hashicorp/consul/api"
 	authclient "github.com/ichigozero/gtdkit/backend/authsvc/client"
+	"github.com/ichigozero/gtdkit/backend/authsvc/inmem"
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authtransport"
 )
 
@@ -33,24 +34,31 @@ func main() {
 		logger = log.With(logger, "caller", log.DefaultCaller)
 	}
 
-	var client consulsd.Client
+	var (
+		client      consulsd.Client
+		inmemClient inmem.Client
+	)
 	{
 		consulConfig := api.DefaultConfig()
 		if len(*consulAddr) > 0 {
 			consulConfig.Address = *consulAddr
 		}
+
 		consulClient, err := api.NewClient(consulConfig)
 		if err != nil {
 			logger.Log("err", err)
 			os.Exit(1)
 		}
+
 		client = consulsd.NewClient(consulClient)
+		inmemClient = inmem.NewClient(consulClient)
 	}
 
 	r := mux.NewRouter()
 	{
 		endpoints, _ := authclient.New(client, logger, *retryMax, *retryTimeout)
-		r.PathPrefix("/auth/v1").Handler(http.StripPrefix("/auth/v1", authtransport.NewHTTPHandler(endpoints, logger)))
+		authHTTPHandler := authtransport.NewHTTPHandler(endpoints, inmemClient, logger)
+		r.PathPrefix("/auth/v1").Handler(http.StripPrefix("/auth/v1", authHTTPHandler))
 	}
 
 	// Interrupt handler.
