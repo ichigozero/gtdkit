@@ -2,43 +2,41 @@ package userservice
 
 import (
 	"context"
-	"errors"
 
 	"github.com/go-kit/kit/log"
+	"github.com/ichigozero/gtdkit/backend/usersvc"
 )
 
 type Service interface {
-	UserID(ctx context.Context, username, password string) (int, error)
+	UserID(ctx context.Context, username, password string) (uint64, error)
 }
 
-func New(logger log.Logger) Service {
+func New(u usersvc.UserRepository, logger log.Logger) Service {
 	var svc Service
 	{
-		svc = NewBasicService()
+		svc = NewBasicService(u)
 		svc = LoggingMiddleware(logger)(svc)
 	}
 	return svc
 }
 
-func NewBasicService() Service {
-	return basicService{}
+func NewBasicService(u usersvc.UserRepository) Service {
+	return basicService{users: u}
 }
 
-type basicService struct{}
+type basicService struct {
+	users usersvc.UserRepository
+}
 
-func (s basicService) UserID(_ context.Context, username, password string) (int, error) {
+func (s basicService) UserID(_ context.Context, username, password string) (uint64, error) {
 	if username == "" || password == "" {
-		return 0, ErrInvalidArgument
+		return 0, usersvc.ErrInvalidArgument
 	}
 
-	if username != "admin" || password != "password" {
-		return 0, ErrUserNotFound
+	uid, err := s.users.UserID(username, password)
+	if err != nil {
+		return uid, err
 	}
 
-	return 1, nil
+	return uid, nil
 }
-
-var (
-	ErrInvalidArgument = errors.New("invalid argument")
-	ErrUserNotFound    = errors.New("user not found")
-)
