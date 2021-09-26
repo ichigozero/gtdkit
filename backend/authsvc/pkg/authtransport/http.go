@@ -8,30 +8,61 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
+	stdjwt "github.com/dgrijalva/jwt-go"
+	kitjwt "github.com/go-kit/kit/auth/jwt"
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/transport"
 	httptransport "github.com/go-kit/kit/transport/http"
+	"github.com/ichigozero/gtdkit/backend/authsvc"
+	"github.com/ichigozero/gtdkit/backend/authsvc/inmem"
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authendpoint"
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authservice"
 	"github.com/ichigozero/gtdkit/backend/usersvc"
 )
 
-func NewHTTPHandler(endpoints authendpoint.Set, logger log.Logger) http.Handler {
+func NewHTTPHandler(endpoints authendpoint.Set, client inmem.Client, logger log.Logger) http.Handler {
 	options := []httptransport.ServerOption{
 		httptransport.ServerErrorEncoder(errorEncoder),
 		httptransport.ServerErrorHandler(transport.NewLogErrorHandler(logger)),
 	}
 
 	m := http.NewServeMux()
-	m.Handle("/login", httptransport.NewServer(
+
+	loginHandler := httptransport.NewServer(
 		endpoints.LoginEndpoint,
 		decodeHTTPLoginRequest,
 		encodeHTTPGenericResponse,
 		options...,
-	))
+	)
+
+	var logoutEndpoint endpoint.Endpoint
+	{
+		kf := func(token *stdjwt.Token) (interface{}, error) {
+			return []byte(os.Getenv("ACCESS_SECRET")), nil
+		}
+
+		logoutEndpoint = endpoints.LogoutEndpoint
+		logoutEndpoint = NewAuthenticater(client)(logoutEndpoint)
+		logoutEndpoint = kitjwt.NewParser(
+			kf,
+			stdjwt.SigningMethodHS256,
+			kitjwt.MapClaimsFactory,
+		)(logoutEndpoint)
+	}
+
+	logoutHandler := httptransport.NewServer(
+		logoutEndpoint,
+		decodeHTTPLogoutRequest,
+		encodeHTTPGenericResponse,
+		append(options, httptransport.ServerBefore(kitjwt.HTTPToContext()))...,
+	)
+
+	m.Handle("/login", loginHandler)
+	m.Handle("/logout", logoutHandler)
 
 	return m
 }
@@ -59,8 +90,20 @@ func NewHTTPClient(instance string, logger log.Logger) (authservice.Service, err
 		).Endpoint()
 	}
 
+	var logoutEndpoint endpoint.Endpoint
+	{
+		logoutEndpoint = httptransport.NewClient(
+			"POST",
+			copyURL(u, "/logout"),
+			encodeHTTPGenericRequest,
+			decodeHTTPLogoutResponse,
+			append(options, httptransport.ClientBefore(kitjwt.ContextToHTTP()))...,
+		).Endpoint()
+	}
+
 	return authendpoint.Set{
-		LoginEndpoint: loginEndpoint,
+		LoginEndpoint:  loginEndpoint,
+		LogoutEndpoint: logoutEndpoint,
 	}, nil
 }
 
@@ -81,7 +124,11 @@ func err2code(err error) int {
 		return http.StatusBadRequest
 	case usersvc.ErrUserNotFound:
 		return http.StatusUnauthorized
-	case authservice.ErrUserIDContextMissing:
+	case authsvc.ErrInvalidArgument:
+		return http.StatusBadRequest
+	case authsvc.ErrUserIDContextMissing:
+		return http.StatusUnauthorized
+	case authsvc.ErrUUIDMissing:
 		return http.StatusUnauthorized
 	}
 	return http.StatusInternalServerError
@@ -102,6 +149,19 @@ func decodeHTTPLoginResponse(_ context.Context, r *http.Response) (interface{}, 
 		return nil, errors.New(r.Status)
 	}
 	var resp authendpoint.LoginResponse
+	err := json.NewDecoder(r.Body).Decode(&resp)
+	return resp, err
+}
+
+func decodeHTTPLogoutRequest(_ context.Context, r *http.Request) (interface{}, error) {
+	return authendpoint.LogoutRequest{}, nil
+}
+
+func decodeHTTPLogoutResponse(_ context.Context, r *http.Response) (interface{}, error) {
+	if r.StatusCode != http.StatusOK {
+		return nil, errors.New(r.Status)
+	}
+	var resp authendpoint.LogoutResponse
 	err := json.NewDecoder(r.Body).Decode(&resp)
 	return resp, err
 }

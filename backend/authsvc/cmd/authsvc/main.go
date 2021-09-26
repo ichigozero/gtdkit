@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/kit/log"
 	consulsd "github.com/go-kit/kit/sd/consul"
 	"github.com/hashicorp/consul/api"
+	"github.com/ichigozero/gtdkit/backend/authsvc/inmem"
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authendpoint"
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authservice"
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authtransport"
@@ -43,8 +44,10 @@ func main() {
 		logger = log.With(logger, "caller", log.DefaultCaller)
 	}
 
-	var client consulsd.Client
-	var registrar *consulsd.Registrar
+	var (
+		client      consulsd.Client
+		inmemClient inmem.Client
+	)
 	{
 		consulConfig := api.DefaultConfig()
 		if len(*consulAddr) > 0 {
@@ -66,22 +69,24 @@ func main() {
 		}
 
 		client = consulsd.NewClient(consulClient)
-		registrar = consulsd.NewRegistrar(client, asr, logger)
+		registrar := consulsd.NewRegistrar(client, asr, logger)
 		registrar.Register()
 		defer registrar.Deregister()
+
+		inmemClient = inmem.NewClient(consulClient)
 	}
 
 	userEndpoints, _ := userclient.New(client, logger, *retryMax, *retryTimeout)
 
 	var service authservice.Service
 	{
-		service = authservice.New(authservice.NewTokenizer(), logger)
+		service = authservice.New(authservice.NewTokenizer(), inmemClient, logger)
 		service = authservice.ProxingMiddleware(context.Background(), userEndpoints.UserIDEndpoint)(service)
 	}
 
 	var (
 		endpoints   = authendpoint.New(service, logger)
-		httpHandler = authtransport.NewHTTPHandler(endpoints, logger)
+		httpHandler = authtransport.NewHTTPHandler(endpoints, inmemClient, logger)
 	)
 
 	var g group.Group

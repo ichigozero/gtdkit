@@ -57,7 +57,6 @@ func main() {
 		grpcServer = usertransport.NewGRPCServer(endpoints, logger)
 	)
 
-	var registrar *consulsd.Registrar
 	{
 		consulConfig := api.DefaultConfig()
 		if len(*consulAddr) > 0 {
@@ -79,7 +78,7 @@ func main() {
 		}
 
 		client := consulsd.NewClient(consulClient)
-		registrar = consulsd.NewRegistrar(client, asr, logger)
+		registrar := consulsd.NewRegistrar(client, asr, logger)
 		registrar.Register()
 		defer registrar.Deregister()
 	}

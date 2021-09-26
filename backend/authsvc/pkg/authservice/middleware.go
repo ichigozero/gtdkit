@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
+	"github.com/ichigozero/gtdkit/backend/authsvc"
 	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/userendpoint"
 )
 
@@ -26,6 +27,13 @@ func (mw loggingMiddleware) Login(ctx context.Context, username, password string
 		mw.logger.Log("method", "Login", "err", err)
 	}()
 	return mw.next.Login(ctx, username, password)
+}
+
+func (mw loggingMiddleware) Logout(ctx context.Context, accessUUID string) (success bool, err error) {
+	defer func() {
+		mw.logger.Log("method", "Logout", "success", success, "err", err)
+	}()
+	return mw.next.Logout(ctx, accessUUID)
 }
 
 func ProxingMiddleware(ctx context.Context, userIDEndpoint endpoint.Endpoint) Middleware {
@@ -50,9 +58,11 @@ func (mw proxingMiddleware) Login(ctx context.Context, username, password string
 		return nil, resp.Err
 	}
 
-	ctx = context.WithValue(ctx, UserIDContextKey, resp.ID)
+	ctx = context.WithValue(ctx, authsvc.UserIDContextKey, resp.ID)
 
 	return mw.next.Login(ctx, username, password)
 }
 
-const UserIDContextKey = "UserID"
+func (mw proxingMiddleware) Logout(ctx context.Context, accessUUID string) (bool, error) {
+	return mw.next.Logout(ctx, accessUUID)
+}
