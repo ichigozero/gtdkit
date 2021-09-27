@@ -25,3 +25,10 @@ func (mw loggingMiddleware) UserID(ctx context.Context, username, password strin
 	}()
 	return mw.next.UserID(ctx, username, password)
 }
+
+func (mw loggingMiddleware) IsExists(ctx context.Context, id uint64) (v bool, err error) {
+	defer func() {
+		mw.logger.Log("method", "IsExists", "id", id, "v", v, "err", err)
+	}()
+	return mw.next.IsExists(ctx, id)
+}

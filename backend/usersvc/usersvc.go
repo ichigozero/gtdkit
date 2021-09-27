@@ -10,6 +10,7 @@ type User struct {
 
 type UserRepository interface {
 	UserID(username, password string) (uint64, error)
+	IsExists(id uint64) (bool, error)
 }
 
 var (

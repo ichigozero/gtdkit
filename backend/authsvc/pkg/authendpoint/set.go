@@ -2,7 +2,11 @@ package authendpoint
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 
+	stdjwt "github.com/dgrijalva/jwt-go"
+	kitjwt "github.com/go-kit/kit/auth/jwt"
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
 	"github.com/ichigozero/gtdkit/backend/authsvc"
@@ -10,8 +14,9 @@ import (
 )
 
 type Set struct {
-	LoginEndpoint  endpoint.Endpoint
-	LogoutEndpoint endpoint.Endpoint
+	LoginEndpoint   endpoint.Endpoint
+	LogoutEndpoint  endpoint.Endpoint
+	RefreshEndpoint endpoint.Endpoint
 }
 
 func New(svc authservice.Service, logger log.Logger) Set {
@@ -27,9 +32,16 @@ func New(svc authservice.Service, logger log.Logger) Set {
 		logoutEndpoint = LoggingMiddleware(log.With(logger, "method", "Logout"))(logoutEndpoint)
 	}
 
+	var refreshEndpoint endpoint.Endpoint
+	{
+		refreshEndpoint = MakeRefreshEndpoint(svc)
+		refreshEndpoint = LoggingMiddleware(log.With(logger, "method", "Refresh"))(refreshEndpoint)
+	}
+
 	return Set{
-		LoginEndpoint:  loginEndpoint,
-		LogoutEndpoint: logoutEndpoint,
+		LoginEndpoint:   loginEndpoint,
+		LogoutEndpoint:  logoutEndpoint,
+		RefreshEndpoint: refreshEndpoint,
 	}
 }
 
@@ -51,6 +63,16 @@ func (s Set) Logout(ctx context.Context, accessUUID string) (bool, error) {
 
 	resp := response.(LogoutResponse)
 	return resp.Success, resp.Err
+}
+
+func (s Set) Refresh(ctx context.Context, accessUUID, refreshUUID string, userID uint64) (map[string]string, error) {
+	response, err := s.RefreshEndpoint(ctx, RefreshRequest{})
+	if err != nil {
+		return nil, err
+	}
+
+	resp := response.(RefreshResponse)
+	return resp.Tokens, resp.Err
 }
 
 func MakeLoginEndpoint(s authservice.Service) endpoint.Endpoint {
@@ -76,6 +98,35 @@ func MakeLogoutEndpoint(s authservice.Service) endpoint.Endpoint {
 	}
 }
 
+func MakeRefreshEndpoint(s authservice.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request interface{}) (interface{}, error) {
+		claims, ok := ctx.Value(kitjwt.JWTClaimsContextKey).(stdjwt.MapClaims)
+		if !ok {
+			return nil, authsvc.ErrClaimsMissing
+		}
+
+		accessUUID, ok := claims["access_uuid"].(string)
+		if !ok {
+			return nil, authsvc.ErrClaimsInvalid
+		}
+
+		refreshUUID, ok := claims["refresh_uuid"].(string)
+		if !ok {
+			return nil, authsvc.ErrClaimsInvalid
+		}
+
+		userID, err := strconv.ParseUint(fmt.Sprintf("%.f", claims["user_id"]), 10, 64)
+		if err != nil {
+			return nil, authsvc.ErrClaimsInvalid
+		}
+
+		_ = request.(RefreshRequest)
+		t, err := s.Refresh(ctx, accessUUID, refreshUUID, userID)
+
+		return RefreshResponse{Tokens: t, Err: err}, nil
+	}
+}
+
 type LoginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -96,3 +147,12 @@ type LogoutResponse struct {
 }
 
 func (r LogoutResponse) Failed() error { return r.Err }
+
+type RefreshRequest struct{}
+
+type RefreshResponse struct {
+	Tokens map[string]string `json:"tokens"`
+	Err    error             `json:"-"`
+}
+
+func (r RefreshResponse) Failed() error { return r.Err }

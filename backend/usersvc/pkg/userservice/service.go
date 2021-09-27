@@ -9,6 +9,7 @@ import (
 
 type Service interface {
 	UserID(ctx context.Context, username, password string) (uint64, error)
+	IsExists(ctx context.Context, id uint64) (bool, error)
 }
 
 func New(u usersvc.UserRepository, logger log.Logger) Service {
@@ -39,4 +40,12 @@ func (s basicService) UserID(_ context.Context, username, password string) (uint
 	}
 
 	return uid, nil
+}
+
+func (s basicService) IsExists(_ context.Context, id uint64) (bool, error) {
+	if id == 0 {
+		return false, usersvc.ErrInvalidArgument
+	}
+
+	return s.users.IsExists(id)
 }

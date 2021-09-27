@@ -81,7 +81,11 @@ func main() {
 	var service authservice.Service
 	{
 		service = authservice.New(authservice.NewTokenizer(), inmemClient, logger)
-		service = authservice.ProxingMiddleware(context.Background(), userEndpoints.UserIDEndpoint)(service)
+		service = authservice.ProxingMiddleware(
+			context.Background(),
+			userEndpoints.UserIDEndpoint,
+			userEndpoints.IsExistsEndpoint,
+		)(service)
 	}
 
 	var (
