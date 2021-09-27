@@ -61,8 +61,30 @@ func NewHTTPHandler(endpoints authendpoint.Set, client inmem.Client, logger log.
 		append(options, httptransport.ServerBefore(kitjwt.HTTPToContext()))...,
 	)
 
+	var refreshEndpoint endpoint.Endpoint
+	{
+		kf := func(token *stdjwt.Token) (interface{}, error) {
+			return []byte(os.Getenv("REFRESH_SECRET")), nil
+		}
+
+		refreshEndpoint = endpoints.RefreshEndpoint
+		refreshEndpoint = kitjwt.NewParser(
+			kf,
+			stdjwt.SigningMethodHS256,
+			kitjwt.MapClaimsFactory,
+		)(refreshEndpoint)
+	}
+
+	refreshHandler := httptransport.NewServer(
+		refreshEndpoint,
+		decodeHTTPRefreshRequest,
+		encodeHTTPGenericResponse,
+		append(options, httptransport.ServerBefore(kitjwt.HTTPToContext()))...,
+	)
+
 	m.Handle("/login", loginHandler)
 	m.Handle("/logout", logoutHandler)
+	m.Handle("/refresh", refreshHandler)
 
 	return m
 }
@@ -101,9 +123,21 @@ func NewHTTPClient(instance string, logger log.Logger) (authservice.Service, err
 		).Endpoint()
 	}
 
+	var refreshEndpoint endpoint.Endpoint
+	{
+		refreshEndpoint = httptransport.NewClient(
+			"POST",
+			copyURL(u, "/refresh"),
+			encodeHTTPGenericRequest,
+			decodeHTTPRefreshResponse,
+			append(options, httptransport.ClientBefore(kitjwt.ContextToHTTP()))...,
+		).Endpoint()
+	}
+
 	return authendpoint.Set{
-		LoginEndpoint:  loginEndpoint,
-		LogoutEndpoint: logoutEndpoint,
+		LoginEndpoint:   loginEndpoint,
+		LogoutEndpoint:  logoutEndpoint,
+		RefreshEndpoint: refreshEndpoint,
 	}, nil
 }
 
@@ -128,7 +162,7 @@ func err2code(err error) int {
 		return http.StatusBadRequest
 	case authsvc.ErrUserIDContextMissing:
 		return http.StatusUnauthorized
-	case authsvc.ErrUUIDMissing:
+	case inmem.ErrKeyNotFound:
 		return http.StatusUnauthorized
 	}
 	return http.StatusInternalServerError
@@ -162,6 +196,19 @@ func decodeHTTPLogoutResponse(_ context.Context, r *http.Response) (interface{},
 		return nil, errors.New(r.Status)
 	}
 	var resp authendpoint.LogoutResponse
+	err := json.NewDecoder(r.Body).Decode(&resp)
+	return resp, err
+}
+
+func decodeHTTPRefreshRequest(_ context.Context, r *http.Request) (interface{}, error) {
+	return authendpoint.RefreshRequest{}, nil
+}
+
+func decodeHTTPRefreshResponse(_ context.Context, r *http.Response) (interface{}, error) {
+	if r.StatusCode != http.StatusOK {
+		return nil, errors.New(r.Status)
+	}
+	var resp authendpoint.RefreshResponse
 	err := json.NewDecoder(r.Body).Decode(&resp)
 	return resp, err
 }

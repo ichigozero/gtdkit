@@ -36,15 +36,23 @@ func (mw loggingMiddleware) Logout(ctx context.Context, accessUUID string) (succ
 	return mw.next.Logout(ctx, accessUUID)
 }
 
-func ProxingMiddleware(ctx context.Context, userIDEndpoint endpoint.Endpoint) Middleware {
+func (mw loggingMiddleware) Refresh(ctx context.Context, accessUUID, refreshUUID string, userID uint64) (tokens map[string]string, err error) {
+	defer func() {
+		mw.logger.Log("method", "Refresh", "err", err)
+	}()
+	return mw.next.Refresh(ctx, accessUUID, refreshUUID, userID)
+}
+
+func ProxingMiddleware(ctx context.Context, userIDEndpoint, isUserExists endpoint.Endpoint) Middleware {
 	return func(next Service) Service {
-		return proxingMiddleware{next, userIDEndpoint}
+		return proxingMiddleware{next, userIDEndpoint, isUserExists}
 	}
 }
 
 type proxingMiddleware struct {
-	next   Service
-	userID endpoint.Endpoint
+	next         Service
+	userID       endpoint.Endpoint
+	isUserExists endpoint.Endpoint
 }
 
 func (mw proxingMiddleware) Login(ctx context.Context, username, password string) (map[string]string, error) {
@@ -65,4 +73,18 @@ func (mw proxingMiddleware) Login(ctx context.Context, username, password string
 
 func (mw proxingMiddleware) Logout(ctx context.Context, accessUUID string) (bool, error) {
 	return mw.next.Logout(ctx, accessUUID)
+}
+
+func (mw proxingMiddleware) Refresh(ctx context.Context, accessUUID, refreshUUID string, userID uint64) (map[string]string, error) {
+	response, err := mw.isUserExists(ctx, userendpoint.IsExistsRequest{ID: userID})
+	if err != nil {
+		return nil, err
+	}
+
+	resp := response.(userendpoint.IsExistsResponse)
+	if resp.Err != nil {
+		return nil, resp.Err
+	}
+
+	return mw.next.Refresh(ctx, accessUUID, refreshUUID, userID)
 }

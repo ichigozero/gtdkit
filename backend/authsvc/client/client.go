@@ -35,6 +35,13 @@ func New(apiclient consulsd.Client, logger log.Logger, retryMax int, retryTimeou
 		retry := lb.Retry(retryMax, retryTimeout, balancer)
 		endpoints.LogoutEndpoint = retry
 	}
+	{
+		factory := factoryFor(authendpoint.MakeRefreshEndpoint, logger)
+		endpointer := sd.NewEndpointer(instancer, factory, logger)
+		balancer := lb.NewRoundRobin(endpointer)
+		retry := lb.Retry(retryMax, retryTimeout, balancer)
+		endpoints.RefreshEndpoint = retry
+	}
 
 	return endpoints, nil
 }

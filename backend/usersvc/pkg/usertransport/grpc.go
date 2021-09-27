@@ -16,7 +16,8 @@ import (
 )
 
 type grpcServer struct {
-	userID grpctransport.Handler
+	userID   grpctransport.Handler
+	isExists grpctransport.Handler
 	pb.UnimplementedUserServer
 }
 
@@ -32,6 +33,12 @@ func NewGRPCServer(endpoints userendpoint.Set, logger log.Logger) pb.UserServer 
 			encodeGRPCUserIDResponse,
 			options...,
 		),
+		isExists: grpctransport.NewServer(
+			endpoints.IsExistsEndpoint,
+			decodeGRPCIsExistsRequest,
+			encodeGRPCIsExistsResponse,
+			options...,
+		),
 	}
 }
 
@@ -43,12 +50,20 @@ func (s *grpcServer) UserID(ctx context.Context, req *pb.UserIDRequest) (*pb.Use
 	return rep.(*pb.UserIDReply), nil
 }
 
+func (s *grpcServer) IsExists(ctx context.Context, req *pb.IsExistsRequest) (*pb.IsExistsReply, error) {
+	_, rep, err := s.isExists.ServeGRPC(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return rep.(*pb.IsExistsReply), nil
+}
+
 func NewGRPCClient(conn *grpc.ClientConn, logger log.Logger) userservice.Service {
 	var options []grpctransport.ClientOption
 
-	var userEndpoint endpoint.Endpoint
+	var userIDEndpoint endpoint.Endpoint
 	{
-		userEndpoint = grpctransport.NewClient(
+		userIDEndpoint = grpctransport.NewClient(
 			conn,
 			"pb.User",
 			"UserID",
@@ -59,17 +74,28 @@ func NewGRPCClient(conn *grpc.ClientConn, logger log.Logger) userservice.Service
 		).Endpoint()
 	}
 
+	var isExistsEndpoint endpoint.Endpoint
+	{
+		isExistsEndpoint = grpctransport.NewClient(
+			conn,
+			"pb.User",
+			"IsExists",
+			encodeGRPCIsExistsRequest,
+			decodeGRPCIsExistsResponse,
+			pb.IsExistsReply{},
+			options...,
+		).Endpoint()
+	}
+
 	return userendpoint.Set{
-		UserIDEndpoint: userEndpoint,
+		UserIDEndpoint:   userIDEndpoint,
+		IsExistsEndpoint: isExistsEndpoint,
 	}
 }
 
 func decodeGRPCUserIDRequest(_ context.Context, grpcReq interface{}) (interface{}, error) {
 	req := grpcReq.(*pb.UserIDRequest)
-	return userendpoint.UserIDRequest{
-		Name:     string(req.Name),
-		Password: string(req.Password),
-	}, nil
+	return userendpoint.UserIDRequest{Name: string(req.Name), Password: string(req.Password)}, nil
 }
 
 func encodeGRPCUserIDResponse(_ context.Context, response interface{}) (interface{}, error) {
@@ -85,6 +111,26 @@ func encodeGRPCUserIDRequest(_ context.Context, request interface{}) (interface{
 func decodeGRPCUserIDResponse(_ context.Context, grpcReply interface{}) (interface{}, error) {
 	reply := grpcReply.(*pb.UserIDReply)
 	return userendpoint.UserIDResponse{ID: reply.Id, Err: str2err(reply.Err)}, nil
+}
+
+func decodeGRPCIsExistsRequest(_ context.Context, grpcReq interface{}) (interface{}, error) {
+	req := grpcReq.(*pb.IsExistsRequest)
+	return userendpoint.IsExistsRequest{ID: req.Id}, nil
+}
+
+func encodeGRPCIsExistsResponse(_ context.Context, response interface{}) (interface{}, error) {
+	resp := response.(userendpoint.IsExistsResponse)
+	return &pb.IsExistsReply{V: resp.V, Err: err2str(resp.Err)}, nil
+}
+
+func encodeGRPCIsExistsRequest(_ context.Context, request interface{}) (interface{}, error) {
+	req := request.(userendpoint.IsExistsRequest)
+	return &pb.IsExistsRequest{Id: req.ID}, nil
+}
+
+func decodeGRPCIsExistsResponse(_ context.Context, grpcReply interface{}) (interface{}, error) {
+	reply := grpcReply.(*pb.IsExistsReply)
+	return userendpoint.IsExistsResponse{V: reply.V, Err: str2err(reply.Err)}, nil
 }
 
 func str2err(s string) error {

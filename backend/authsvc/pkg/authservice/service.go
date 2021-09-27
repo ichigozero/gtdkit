@@ -12,6 +12,7 @@ import (
 type Service interface {
 	Login(ctx context.Context, username, password string) (map[string]string, error)
 	Logout(ctx context.Context, accessUUID string) (bool, error)
+	Refresh(ctx context.Context, accessUUID, refreshUUID string, userID uint64) (map[string]string, error)
 }
 
 func New(t Tokenizer, c inmem.Client, logger log.Logger) Service {
@@ -69,6 +70,38 @@ func (s *basicService) Logout(_ context.Context, accessUUID string) (bool, error
 	}
 
 	return true, nil
+}
+
+func (s *basicService) Refresh(_ context.Context, accessUUID, refreshUUID string, userID uint64) (map[string]string, error) {
+	if accessUUID == "" || refreshUUID == "" || userID == 0 {
+		return nil, authsvc.ErrInvalidArgument
+	}
+
+	if err := s.client.Get(refreshUUID); err != nil {
+		return nil, err
+	}
+
+	var err error
+	{
+		err = s.client.Delete(accessUUID)
+		if err != nil {
+			return nil, err
+		}
+
+		err = s.client.Delete(refreshUUID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	at, rt, err := s.tokenizer.Generate(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	s.storeTokens(at, rt)
+
+	return s.compileTokens(at, rt), nil
 }
 
 func (s *basicService) storeTokens(at *AccessToken, rt *RefreshToken) {

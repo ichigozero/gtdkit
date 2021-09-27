@@ -23,3 +23,14 @@ func (u *userRepository) UserID(username, password string) (uint64, error) {
 
 	return user.ID, nil
 }
+
+func (u *userRepository) IsExists(id uint64) (bool, error) {
+	var user usersvc.User
+	u.db.First(&user, id)
+
+	if user.ID == 0 {
+		return false, usersvc.ErrUserNotFound
+	}
+
+	return true, nil
+}

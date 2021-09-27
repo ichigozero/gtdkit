@@ -19,6 +19,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type UserClient interface {
 	UserID(ctx context.Context, in *UserIDRequest, opts ...grpc.CallOption) (*UserIDReply, error)
+	IsExists(ctx context.Context, in *IsExistsRequest, opts ...grpc.CallOption) (*IsExistsReply, error)
 }
 
 type userClient struct {
@@ -38,11 +39,21 @@ func (c *userClient) UserID(ctx context.Context, in *UserIDRequest, opts ...grpc
 	return out, nil
 }
 
+func (c *userClient) IsExists(ctx context.Context, in *IsExistsRequest, opts ...grpc.CallOption) (*IsExistsReply, error) {
+	out := new(IsExistsReply)
+	err := c.cc.Invoke(ctx, "/pb.User/IsExists", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UserServer is the server API for User service.
 // All implementations must embed UnimplementedUserServer
 // for forward compatibility
 type UserServer interface {
 	UserID(context.Context, *UserIDRequest) (*UserIDReply, error)
+	IsExists(context.Context, *IsExistsRequest) (*IsExistsReply, error)
 	mustEmbedUnimplementedUserServer()
 }
 
@@ -52,6 +63,9 @@ type UnimplementedUserServer struct {
 
 func (UnimplementedUserServer) UserID(context.Context, *UserIDRequest) (*UserIDReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UserID not implemented")
+}
+func (UnimplementedUserServer) IsExists(context.Context, *IsExistsRequest) (*IsExistsReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method IsExists not implemented")
 }
 func (UnimplementedUserServer) mustEmbedUnimplementedUserServer() {}
 
@@ -84,6 +98,24 @@ func _User_UserID_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	return interceptor(ctx, in, info, handler)
 }
 
+func _User_IsExists_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IsExistsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServer).IsExists(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.User/IsExists",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServer).IsExists(ctx, req.(*IsExistsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // User_ServiceDesc is the grpc.ServiceDesc for User service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -94,6 +126,10 @@ var User_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UserID",
 			Handler:    _User_UserID_Handler,
+		},
+		{
+			MethodName: "IsExists",
+			Handler:    _User_IsExists_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

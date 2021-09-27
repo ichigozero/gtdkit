@@ -6,6 +6,7 @@ package pb;
 
 service User {
   rpc UserID (UserIDRequest) returns (UserIDReply) {}
+  rpc IsExists (IsExistsRequest) returns (IsExistsReply) {}
 }
 
 message UserIDRequest {
@@ -15,5 +16,14 @@ message UserIDRequest {
 
 message UserIDReply {
   uint64 id = 1;
+  string err = 2;
+}
+
+message IsExistsRequest {
+  uint64 id = 1;
+}
+
+message IsExistsReply {
+  bool v = 1;
   string err = 2;
 }
