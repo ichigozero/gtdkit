@@ -13,6 +13,7 @@ type Service interface {
 	Login(ctx context.Context, username, password string) (map[string]string, error)
 	Logout(ctx context.Context, accessUUID string) (bool, error)
 	Refresh(ctx context.Context, accessUUID, refreshUUID string, userID uint64) (map[string]string, error)
+	Validate(ctx context.Context, accessUUID string) (bool, error)
 }
 
 func New(t Tokenizer, c inmem.Client, logger log.Logger) Service {
@@ -50,9 +51,9 @@ func (s *basicService) Login(ctx context.Context, _, _ string) (map[string]strin
 	return s.compileTokens(at, rt), nil
 }
 
-func (s *basicService) Logout(_ context.Context, accessUUID string) (bool, error) {
-	if accessUUID == "" {
-		return false, authsvc.ErrInvalidArgument
+func (s *basicService) Logout(ctx context.Context, accessUUID string) (bool, error) {
+	if _, err := s.validate(ctx, accessUUID); err != nil {
+		return false, err
 	}
 
 	ruuid := stduuid.NewV5(stduuid.NameSpaceURL, accessUUID).String()
@@ -104,6 +105,10 @@ func (s *basicService) Refresh(_ context.Context, accessUUID, refreshUUID string
 	return s.compileTokens(at, rt), nil
 }
 
+func (s *basicService) Validate(ctx context.Context, accessUUID string) (bool, error) {
+	return s.validate(ctx, accessUUID)
+}
+
 func (s *basicService) storeTokens(at *AccessToken, rt *RefreshToken) {
 	s.client.Put(at.UUID, []byte(at.Hash))
 	s.client.Put(rt.RefreshUUID, []byte(rt.Hash))
@@ -114,4 +119,15 @@ func (s *basicService) compileTokens(at *AccessToken, rt *RefreshToken) map[stri
 		"access":  at.Hash,
 		"refresh": rt.Hash,
 	}
+}
+
+func (s *basicService) validate(_ context.Context, accessUUID string) (bool, error) {
+	if accessUUID == "" {
+		return false, authsvc.ErrInvalidArgument
+	}
+
+	if err := s.client.Get(accessUUID); err != nil {
+		return false, err
+	}
+	return true, nil
 }

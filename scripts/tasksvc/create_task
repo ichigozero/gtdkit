@@ -1,0 +1,7 @@
+#!/bin/bash
+
+curl -X "POST" "http://localhost:8000/task/v1/create" \
+  -H 'Accept: application/json' \
+  -H 'Content-Type: application/json' \
+	-H 'Authorization: Bearer '"$1" \
+  -d '{"title":"Read a book", "description": "Foo"}'

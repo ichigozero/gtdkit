@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/transport"
 	httptransport "github.com/go-kit/kit/transport/http"
+	"github.com/gorilla/mux"
 	"github.com/ichigozero/gtdkit/backend/authsvc"
 	"github.com/ichigozero/gtdkit/backend/authsvc/inmem"
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authendpoint"
@@ -29,8 +30,6 @@ func NewHTTPHandler(endpoints authendpoint.Set, client inmem.Client, logger log.
 		httptransport.ServerErrorEncoder(errorEncoder),
 		httptransport.ServerErrorHandler(transport.NewLogErrorHandler(logger)),
 	}
-
-	m := http.NewServeMux()
 
 	loginHandler := httptransport.NewServer(
 		endpoints.LoginEndpoint,
@@ -46,7 +45,6 @@ func NewHTTPHandler(endpoints authendpoint.Set, client inmem.Client, logger log.
 		}
 
 		logoutEndpoint = endpoints.LogoutEndpoint
-		logoutEndpoint = NewAuthenticater(client)(logoutEndpoint)
 		logoutEndpoint = kitjwt.NewParser(
 			kf,
 			stdjwt.SigningMethodHS256,
@@ -82,11 +80,21 @@ func NewHTTPHandler(endpoints authendpoint.Set, client inmem.Client, logger log.
 		append(options, httptransport.ServerBefore(kitjwt.HTTPToContext()))...,
 	)
 
-	m.Handle("/login", loginHandler)
-	m.Handle("/logout", logoutHandler)
-	m.Handle("/refresh", refreshHandler)
+	validateHandler := httptransport.NewServer(
+		endpoints.ValidateEndpoint,
+		decodeHTTPValidateRequest,
+		encodeHTTPGenericResponse,
+		options...,
+	)
 
-	return m
+	r := mux.NewRouter()
+
+	r.Methods("POST").Path("/login").Handler(loginHandler)
+	r.Methods("POST").Path("/logout").Handler(logoutHandler)
+	r.Methods("POST").Path("/refresh").Handler(refreshHandler)
+	r.Methods("GET").Path("/validate").Handler(validateHandler)
+
+	return r
 }
 
 func NewHTTPClient(instance string, logger log.Logger) (authservice.Service, error) {
@@ -134,10 +142,22 @@ func NewHTTPClient(instance string, logger log.Logger) (authservice.Service, err
 		).Endpoint()
 	}
 
+	var validateEndpoint endpoint.Endpoint
+	{
+		validateEndpoint = httptransport.NewClient(
+			"GET",
+			copyURL(u, "/validate"),
+			encodeHTTPGenericRequest,
+			decodeHTTPValidateResponse,
+			options...,
+		).Endpoint()
+	}
+
 	return authendpoint.Set{
-		LoginEndpoint:   loginEndpoint,
-		LogoutEndpoint:  logoutEndpoint,
-		RefreshEndpoint: refreshEndpoint,
+		LoginEndpoint:    loginEndpoint,
+		LogoutEndpoint:   logoutEndpoint,
+		RefreshEndpoint:  refreshEndpoint,
+		ValidateEndpoint: validateEndpoint,
 	}, nil
 }
 
@@ -209,6 +229,21 @@ func decodeHTTPRefreshResponse(_ context.Context, r *http.Response) (interface{}
 		return nil, errors.New(r.Status)
 	}
 	var resp authendpoint.RefreshResponse
+	err := json.NewDecoder(r.Body).Decode(&resp)
+	return resp, err
+}
+
+func decodeHTTPValidateRequest(_ context.Context, r *http.Request) (interface{}, error) {
+	var req authendpoint.ValidateRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+	return req, err
+}
+
+func decodeHTTPValidateResponse(_ context.Context, r *http.Response) (interface{}, error) {
+	if r.StatusCode != http.StatusOK {
+		return nil, errors.New(r.Status)
+	}
+	var resp authendpoint.ValidateResponse
 	err := json.NewDecoder(r.Body).Decode(&resp)
 	return resp, err
 }

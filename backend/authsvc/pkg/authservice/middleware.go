@@ -43,6 +43,13 @@ func (mw loggingMiddleware) Refresh(ctx context.Context, accessUUID, refreshUUID
 	return mw.next.Refresh(ctx, accessUUID, refreshUUID, userID)
 }
 
+func (mw loggingMiddleware) Validate(ctx context.Context, accessUUID string) (v bool, err error) {
+	defer func() {
+		mw.logger.Log("method", "Validate", "access_uuid", accessUUID, "v", v, "err", err)
+	}()
+	return mw.next.Validate(ctx, accessUUID)
+}
+
 func ProxingMiddleware(ctx context.Context, userIDEndpoint, isUserExists endpoint.Endpoint) Middleware {
 	return func(next Service) Service {
 		return proxingMiddleware{next, userIDEndpoint, isUserExists}
@@ -87,4 +94,8 @@ func (mw proxingMiddleware) Refresh(ctx context.Context, accessUUID, refreshUUID
 	}
 
 	return mw.next.Refresh(ctx, accessUUID, refreshUUID, userID)
+}
+
+func (mw proxingMiddleware) Validate(ctx context.Context, accessUUID string) (bool, error) {
+	return mw.next.Validate(ctx, accessUUID)
 }

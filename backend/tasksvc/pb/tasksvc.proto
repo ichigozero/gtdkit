@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+option go_package = "github.com/ichigozero/gtdkit/backend/tasksvc/pb";
+
+package pb;
+
+service TaskSVC {
+  rpc CreateTask (CreateTaskRequest) returns (CreateTaskReply) {}
+  rpc Tasks (TasksRequest) returns (TasksReply) {}
+  rpc Task (TaskRequest) returns (TaskReply) {}
+  rpc UpdateTask (UpdateTaskRequest) returns (UpdateTaskReply) {}
+  rpc DeleteTask (DeleteTaskRequest) returns (DeleteTaskReply) {}
+}
+
+message CreateTaskRequest {
+  string title = 1;
+  string description = 2;
+  uint64 user_id = 3;
+}
+
+message CreateTaskReply {
+  Task task = 1;
+  string err = 2;
+}
+
+message TasksRequest {}
+
+message TasksReply {
+  repeated Task tasks = 1;
+  string err = 2;
+}
+
+message Task {
+  uint64 id = 1;
+  string title = 2;
+  string description = 3;
+  bool done = 4;
+  uint64 user_id = 5;
+}
+
+message TaskRequest {
+  uint64 task_id = 1;
+}
+
+message TaskReply {
+  Task task = 1;
+  string err = 2;
+}
+
+message UpdateTaskRequest {
+  uint64 id = 1;
+  string title = 2;
+  string description = 3;
+  bool done = 4;
+}
+
+message UpdateTaskReply {
+    Task task = 1;
+    string err = 2;
+}
+
+message DeleteTaskRequest {
+  uint64 task_id = 1;
+}
+
+message DeleteTaskReply {
+  bool result = 1;
+  string err = 2;
+}
