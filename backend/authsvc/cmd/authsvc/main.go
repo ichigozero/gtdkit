@@ -46,6 +46,7 @@ func main() {
 
 	var (
 		client      consulsd.Client
+		registrar   *consulsd.Registrar
 		inmemClient inmem.Client
 	)
 	{
@@ -69,7 +70,7 @@ func main() {
 		}
 
 		client = consulsd.NewClient(consulClient)
-		registrar := consulsd.NewRegistrar(client, asr, logger)
+		registrar = consulsd.NewRegistrar(client, asr, logger)
 		registrar.Register()
 		defer registrar.Deregister()
 
@@ -99,6 +100,7 @@ func main() {
 		httpListener, err := net.Listen("tcp", *httpAddr)
 		if err != nil {
 			logger.Log("transport", "HTTP", "during", "Listen", "err", err)
+			registrar.Deregister()
 			os.Exit(1)
 		}
 		g.Add(func() error {

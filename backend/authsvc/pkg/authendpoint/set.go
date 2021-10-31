@@ -14,9 +14,10 @@ import (
 )
 
 type Set struct {
-	LoginEndpoint   endpoint.Endpoint
-	LogoutEndpoint  endpoint.Endpoint
-	RefreshEndpoint endpoint.Endpoint
+	LoginEndpoint    endpoint.Endpoint
+	LogoutEndpoint   endpoint.Endpoint
+	RefreshEndpoint  endpoint.Endpoint
+	ValidateEndpoint endpoint.Endpoint
 }
 
 func New(svc authservice.Service, logger log.Logger) Set {
@@ -38,10 +39,17 @@ func New(svc authservice.Service, logger log.Logger) Set {
 		refreshEndpoint = LoggingMiddleware(log.With(logger, "method", "Refresh"))(refreshEndpoint)
 	}
 
+	var validateEndpoint endpoint.Endpoint
+	{
+		validateEndpoint = MakeValidateEndpoint(svc)
+		validateEndpoint = LoggingMiddleware(log.With(logger, "method", "Validate"))(validateEndpoint)
+	}
+
 	return Set{
-		LoginEndpoint:   loginEndpoint,
-		LogoutEndpoint:  logoutEndpoint,
-		RefreshEndpoint: refreshEndpoint,
+		LoginEndpoint:    loginEndpoint,
+		LogoutEndpoint:   logoutEndpoint,
+		RefreshEndpoint:  refreshEndpoint,
+		ValidateEndpoint: validateEndpoint,
 	}
 }
 
@@ -75,6 +83,16 @@ func (s Set) Refresh(ctx context.Context, accessUUID, refreshUUID string, userID
 	return resp.Tokens, resp.Err
 }
 
+func (s Set) Validate(ctx context.Context, accessUUID string) (bool, error) {
+	response, err := s.ValidateEndpoint(ctx, ValidateRequest{AccessUUID: accessUUID})
+	if err != nil {
+		return false, err
+	}
+
+	resp := response.(ValidateResponse)
+	return resp.V, resp.Err
+}
+
 func MakeLoginEndpoint(s authservice.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
 		req := request.(LoginRequest)
@@ -86,9 +104,14 @@ func MakeLoginEndpoint(s authservice.Service) endpoint.Endpoint {
 
 func MakeLogoutEndpoint(s authservice.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
-		uuid, ok := ctx.Value(authsvc.JWTUUIDContextKey).(string)
+		claims, ok := ctx.Value(kitjwt.JWTClaimsContextKey).(stdjwt.MapClaims)
 		if !ok {
-			return LogoutResponse{Err: authsvc.ErrUUIDMissing}, nil
+			return LogoutResponse{Err: authsvc.ErrClaimsMissing}, nil
+		}
+
+		uuid, ok := claims["uuid"].(string)
+		if !ok {
+			return LogoutResponse{Err: authsvc.ErrClaimsInvalid}, nil
 		}
 
 		_ = request.(LogoutRequest)
@@ -102,28 +125,37 @@ func MakeRefreshEndpoint(s authservice.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request interface{}) (interface{}, error) {
 		claims, ok := ctx.Value(kitjwt.JWTClaimsContextKey).(stdjwt.MapClaims)
 		if !ok {
-			return nil, authsvc.ErrClaimsMissing
+			return RefreshResponse{Err: authsvc.ErrClaimsMissing}, nil
 		}
 
 		accessUUID, ok := claims["access_uuid"].(string)
 		if !ok {
-			return nil, authsvc.ErrClaimsInvalid
+			return RefreshResponse{Err: authsvc.ErrClaimsInvalid}, nil
 		}
 
 		refreshUUID, ok := claims["refresh_uuid"].(string)
 		if !ok {
-			return nil, authsvc.ErrClaimsInvalid
+			return RefreshResponse{Err: authsvc.ErrClaimsInvalid}, nil
 		}
 
 		userID, err := strconv.ParseUint(fmt.Sprintf("%.f", claims["user_id"]), 10, 64)
 		if err != nil {
-			return nil, authsvc.ErrClaimsInvalid
+			return RefreshResponse{Err: authsvc.ErrClaimsInvalid}, nil
 		}
 
 		_ = request.(RefreshRequest)
 		t, err := s.Refresh(ctx, accessUUID, refreshUUID, userID)
 
 		return RefreshResponse{Tokens: t, Err: err}, nil
+	}
+}
+
+func MakeValidateEndpoint(s authservice.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request interface{}) (response interface{}, err error) {
+		req := request.(ValidateRequest)
+		v, err := s.Validate(ctx, req.AccessUUID)
+
+		return ValidateResponse{V: v, Err: err}, nil
 	}
 }
 
@@ -156,3 +188,14 @@ type RefreshResponse struct {
 }
 
 func (r RefreshResponse) Failed() error { return r.Err }
+
+type ValidateRequest struct {
+	AccessUUID string `json:"access_uuid"`
+}
+
+type ValidateResponse struct {
+	V   bool  `json:"v"`
+	Err error `json:"-"`
+}
+
+func (r ValidateResponse) Failed() error { return r.Err }

@@ -21,12 +21,12 @@ func New(u usersvc.UserRepository, logger log.Logger) Service {
 	return svc
 }
 
-func NewBasicService(u usersvc.UserRepository) Service {
-	return basicService{users: u}
-}
-
 type basicService struct {
 	users usersvc.UserRepository
+}
+
+func NewBasicService(u usersvc.UserRepository) Service {
+	return basicService{users: u}
 }
 
 func (s basicService) UserID(_ context.Context, username, password string) (uint64, error) {

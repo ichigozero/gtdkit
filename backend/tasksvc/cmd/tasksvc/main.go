@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net"
@@ -9,16 +10,19 @@ import (
 	"strconv"
 	"syscall"
 	"text/tabwriter"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	consulsd "github.com/go-kit/kit/sd/consul"
 	kitgrpc "github.com/go-kit/kit/transport/grpc"
 	"github.com/hashicorp/consul/api"
-	"github.com/ichigozero/gtdkit/backend/usersvc/db/gorm"
-	"github.com/ichigozero/gtdkit/backend/usersvc/pb"
-	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/userendpoint"
-	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/userservice"
-	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/usertransport"
+	authclient "github.com/ichigozero/gtdkit/backend/authsvc/client"
+	"github.com/ichigozero/gtdkit/backend/tasksvc/db/gorm"
+	"github.com/ichigozero/gtdkit/backend/tasksvc/pb"
+	"github.com/ichigozero/gtdkit/backend/tasksvc/pkg/taskendpoint"
+	"github.com/ichigozero/gtdkit/backend/tasksvc/pkg/taskservice"
+	"github.com/ichigozero/gtdkit/backend/tasksvc/pkg/tasktransport"
+	userclient "github.com/ichigozero/gtdkit/backend/usersvc/client"
 	"github.com/oklog/oklog/pkg/group"
 	"github.com/twinj/uuid"
 	"google.golang.org/grpc"
@@ -27,10 +31,12 @@ import (
 )
 
 func main() {
-	fs := flag.NewFlagSet("usersvc", flag.ExitOnError)
+	fs := flag.NewFlagSet("tasksvc", flag.ExitOnError)
 	var (
-		grpcAddr   = fs.String("grpc.addr", ":8080", "gRPC listen address")
-		consulAddr = fs.String("consul.addr", "", "Consul agent address")
+		grpcAddr     = fs.String("grpc.addr", ":8082", "gRPC listen address")
+		consulAddr   = fs.String("consul.addr", "", "Consul agent address")
+		retryMax     = flag.Int("retry.max", 3, "per-request retries to different instances")
+		retryTimeout = flag.Duration("retry.timeout", 500*time.Millisecond, "per-request timeout, including retries")
 	)
 
 	fs.Usage = usageFor(fs, os.Args[0]+" [flags]")
@@ -49,15 +55,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	userRepository := gorm.NewUserRepository(db)
-
 	var (
-		service    = userservice.New(userRepository, logger)
-		endpoints  = userendpoint.New(service, logger)
-		grpcServer = usertransport.NewGRPCServer(endpoints, logger)
+		client    consulsd.Client
+		registrar *consulsd.Registrar
 	)
-
-	var registrar *consulsd.Registrar
 	{
 		consulConfig := api.DefaultConfig()
 		if len(*consulAddr) > 0 {
@@ -73,16 +74,35 @@ func main() {
 		p, _ := strconv.Atoi(port)
 		asr := &api.AgentServiceRegistration{
 			ID:      uuid.NewV4().String(),
-			Name:    "usersvc",
+			Name:    "tasksvc",
 			Address: "localhost",
 			Port:    p,
 		}
 
-		client := consulsd.NewClient(consulClient)
+		client = consulsd.NewClient(consulClient)
 		registrar = consulsd.NewRegistrar(client, asr, logger)
 		registrar.Register()
 		defer registrar.Deregister()
 	}
+
+	taskRepository := gorm.NewTaskRepository(db)
+	authEndpoints, _ := authclient.New(client, logger, *retryMax, *retryTimeout)
+	userEndpoints, _ := userclient.New(client, logger, *retryMax, *retryTimeout)
+
+	var service taskservice.Service
+	{
+		service = taskservice.New(taskRepository, logger)
+		service = taskservice.ProxingMiddleware(
+			context.Background(),
+			authEndpoints.ValidateEndpoint,
+			userEndpoints.IsExistsEndpoint,
+		)(service)
+	}
+
+	var (
+		endpoints  = taskendpoint.New(service, logger)
+		grpcServer = tasktransport.NewGRPCServer(endpoints, logger)
+	)
 
 	var g group.Group
 	{
@@ -96,7 +116,7 @@ func main() {
 		g.Add(func() error {
 			logger.Log("transport", "gRPC", "addr", *grpcAddr)
 			baseServer := grpc.NewServer(grpc.UnaryInterceptor(kitgrpc.Interceptor))
-			pb.RegisterUserServer(baseServer, grpcServer)
+			pb.RegisterTaskSVCServer(baseServer, grpcServer)
 			return baseServer.Serve(grpcListener)
 		}, func(error) {
 			grpcListener.Close()

@@ -16,6 +16,8 @@ import (
 	authclient "github.com/ichigozero/gtdkit/backend/authsvc/client"
 	"github.com/ichigozero/gtdkit/backend/authsvc/inmem"
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authtransport"
+	taskclient "github.com/ichigozero/gtdkit/backend/tasksvc/client"
+	"github.com/ichigozero/gtdkit/backend/tasksvc/pkg/tasktransport"
 )
 
 func main() {
@@ -59,6 +61,11 @@ func main() {
 		endpoints, _ := authclient.New(client, logger, *retryMax, *retryTimeout)
 		authHTTPHandler := authtransport.NewHTTPHandler(endpoints, inmemClient, logger)
 		r.PathPrefix("/auth/v1").Handler(http.StripPrefix("/auth/v1", authHTTPHandler))
+	}
+	{
+		endpoints, _ := taskclient.New(client, logger, *retryMax, *retryTimeout)
+		taskHTTPHandler := tasktransport.NewHTTPHandler(endpoints, logger)
+		r.PathPrefix("/task/v1").Handler(http.StripPrefix("/task/v1", taskHTTPHandler))
 	}
 
 	// Interrupt handler.

@@ -21,7 +21,7 @@ type loggingMiddleware struct {
 
 func (mw loggingMiddleware) UserID(ctx context.Context, username, password string) (id uint64, err error) {
 	defer func() {
-		mw.logger.Log("method", "User", "username", username, "err", err)
+		mw.logger.Log("method", "UserID", "username", username, "id", id, "err", err)
 	}()
 	return mw.next.UserID(ctx, username, password)
 }
