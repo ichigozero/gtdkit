@@ -2,14 +2,14 @@ package gorm
 
 import (
 	"github.com/ichigozero/gtdkit/backend/tasksvc"
-	stdgorm "gorm.io/gorm"
+	libgorm "gorm.io/gorm"
 )
 
 type taskRepository struct {
-	db *stdgorm.DB
+	db *libgorm.DB
 }
 
-func NewTaskRepository(db *stdgorm.DB) tasksvc.TaskRepository {
+func NewTaskRepository(db *libgorm.DB) tasksvc.TaskRepository {
 	return &taskRepository{db}
 }
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -22,10 +23,10 @@ import (
 
 func main() {
 	var (
-		httpAddr     = flag.String("http.addr", ":8000", "Address for HTTP (JSON) server")
-		consulAddr   = flag.String("consul.addr", "", "Consul agent address")
-		retryMax     = flag.Int("retry.max", 3, "per-request retries to different instances")
-		retryTimeout = flag.Duration("retry.timeout", 500*time.Millisecond, "per-request timeout, including retries")
+		httpAddr     = flag.String("http.addr", getEnv("HTTP_ADDR", ":8000"), "Address for HTTP (JSON) server")
+		consulAddr   = flag.String("consul.addr", getEnv("CONSUL_ADDR", ""), "Consul agent address")
+		retryMax     = flag.Int("retry.max", getEnvAsInt("RETRY_MAX", 3), "per-request retries to different instances")
+		retryTimeout = flag.Duration("retry.timeout", time.Duration(getEnvAsInt("RETRY_TIMEOUT", 500))*time.Millisecond, "per-request timeout, including retries")
 	)
 	flag.Parse()
 
@@ -84,4 +85,24 @@ func main() {
 
 	// Run!
 	logger.Log("exit", <-errc)
+}
+
+func getEnv(key, fallback string) string {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		value = fallback
+	}
+	return value
+}
+
+func getEnvAsInt(key string, fallback int) int {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		return fallback
+	}
+
+	if v, err := strconv.Atoi(value); err == nil {
+		return v
+	}
+	return fallback
 }
