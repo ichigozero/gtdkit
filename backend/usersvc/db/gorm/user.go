@@ -2,14 +2,14 @@ package gorm
 
 import (
 	"github.com/ichigozero/gtdkit/backend/usersvc"
-	stdgorm "gorm.io/gorm"
+	libgorm "gorm.io/gorm"
 )
 
 type userRepository struct {
-	db *stdgorm.DB
+	db *libgorm.DB
 }
 
-func NewUserRepository(db *stdgorm.DB) usersvc.UserRepository {
+func NewUserRepository(db *libgorm.DB) usersvc.UserRepository {
 	return &userRepository{db}
 }
 

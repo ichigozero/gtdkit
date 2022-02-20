@@ -28,10 +28,26 @@ import (
 func main() {
 	fs := flag.NewFlagSet("authsvc", flag.ExitOnError)
 	var (
-		httpAddr     = fs.String("http.addr", ":8081", "HTTP listen address")
-		consulAddr   = fs.String("consul.addr", "", "Consul agent address")
-		retryMax     = flag.Int("retry.max", 3, "per-request retries to different instances")
-		retryTimeout = flag.Duration("retry.timeout", 500*time.Millisecond, "per-request timeout, including retries")
+		httpAddr = fs.String(
+			"http.addr",
+			getEnv("HTTP_ADDR", ":8081"),
+			"HTTP listen address",
+		)
+		consulAddr = fs.String(
+			"consul.addr",
+			getEnv("CONSUL_ADDR", ""),
+			"Consul agent address",
+		)
+		retryMax = flag.Int(
+			"retry.max",
+			getEnvAsInt("RETRY_MAX", 3),
+			"per-request retries to different instances",
+		)
+		retryTimeout = flag.Duration(
+			"retry.timeout",
+			time.Duration(getEnvAsInt("RETRY_TIMEOUT", 500))*time.Millisecond,
+			"per-request timeout, including retries",
+		)
 	)
 
 	fs.Usage = usageFor(fs, os.Args[0]+" [flags]")
@@ -60,12 +76,20 @@ func main() {
 			os.Exit(1)
 		}
 
-		_, port, _ := net.SplitHostPort(*httpAddr)
+		host, port, err := net.SplitHostPort(*httpAddr)
+		if err != nil {
+			logger.Log("err", err)
+			os.Exit(1)
+		}
+		if host == "" {
+			host = "localhost"
+		}
+
 		p, _ := strconv.Atoi(port)
 		asr := &api.AgentServiceRegistration{
 			ID:      uuid.NewV4().String(),
 			Name:    "authsvc",
-			Address: "localhost",
+			Address: host,
 			Port:    p,
 		}
 
@@ -142,4 +166,24 @@ func usageFor(fs *flag.FlagSet, short string) func() {
 		w.Flush()
 		fmt.Fprintf(os.Stderr, "\n")
 	}
+}
+
+func getEnv(key, fallback string) string {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		value = fallback
+	}
+	return value
+}
+
+func getEnvAsInt(key string, fallback int) int {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		return fallback
+	}
+
+	if v, err := strconv.Atoi(value); err == nil {
+		return v
+	}
+	return fallback
 }

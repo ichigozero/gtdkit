@@ -1,0 +1,100 @@
+services:
+  consul:
+    image: consul
+    command: agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
+    ports:
+      - 8500:8500
+      - 8600:8600/udp
+    networks:
+      - back-tier
+
+  apigateway:
+    build:
+      context: .
+      dockerfile: ./apigateway/Dockerfile
+    depends_on:
+      - consul
+    environment:
+      - HTTP_ADDR=apigateway:8000
+      - CONSUL_ADDR=consul:8500
+    ports:
+      - 8000:8000
+    networks:
+      - back-tier
+
+  usersvcdb:
+    image: postgres:14.2-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=username
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=usersvc
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker/volumes/pg/usersvc:/var/lib/postgresql/data
+    networks:
+      - back-tier
+
+  usersvc:
+    build:
+      context: .
+      dockerfile: ./usersvc/Dockerfile
+    depends_on:
+      - consul
+      - usersvcdb
+    environment:
+      - GRPC_ADDR=usersvc:8080
+      - CONSUL_ADDR=consul:8500
+      - DATABASE_URL=postgres://username:password@usersvcdb:5432/usersvc
+    ports:
+      - 8080
+    networks:
+      - back-tier
+
+  authsvc:
+    build:
+      context: .
+      dockerfile: ./authsvc/Dockerfile
+    depends_on:
+      - consul
+    environment:
+      - HTTP_ADDR=authsvc:8081
+      - CONSUL_ADDR=consul:8500
+    ports:
+      - 8081
+    networks:
+      - back-tier
+
+  tasksvcdb:
+    image: postgres:14.2-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=username
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=tasksvc
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./docker/volumes/pg/tasksvc:/var/lib/postgresql/data
+    networks:
+      - back-tier
+
+  tasksvc:
+    build:
+      context: .
+      dockerfile: ./tasksvc/Dockerfile
+    depends_on:
+      - consul
+      - tasksvcdb
+    environment:
+      - GRPC_ADDR=tasksvc:8082
+      - CONSUL_ADDR=consul:8500
+      - DATABASE_URL=postgres://username:password@tasksvcdb:5432/tasksvc
+    ports:
+      - 8082
+    networks:
+      - back-tier
+
+networks:
+  back-tier:

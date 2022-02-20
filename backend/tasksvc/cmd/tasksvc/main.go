@@ -17,6 +17,7 @@ import (
 	kitgrpc "github.com/go-kit/kit/transport/grpc"
 	"github.com/hashicorp/consul/api"
 	authclient "github.com/ichigozero/gtdkit/backend/authsvc/client"
+	"github.com/ichigozero/gtdkit/backend/tasksvc"
 	"github.com/ichigozero/gtdkit/backend/tasksvc/db/gorm"
 	"github.com/ichigozero/gtdkit/backend/tasksvc/pb"
 	"github.com/ichigozero/gtdkit/backend/tasksvc/pkg/taskendpoint"
@@ -27,16 +28,38 @@ import (
 	"github.com/twinj/uuid"
 	"google.golang.org/grpc"
 	"gorm.io/driver/sqlite"
-	stdgorm "gorm.io/gorm"
+	"gorm.io/driver/postgres"
+	libgorm "gorm.io/gorm"
 )
 
 func main() {
 	fs := flag.NewFlagSet("tasksvc", flag.ExitOnError)
 	var (
-		grpcAddr     = fs.String("grpc.addr", ":8082", "gRPC listen address")
-		consulAddr   = fs.String("consul.addr", "", "Consul agent address")
-		retryMax     = flag.Int("retry.max", 3, "per-request retries to different instances")
-		retryTimeout = flag.Duration("retry.timeout", 500*time.Millisecond, "per-request timeout, including retries")
+		grpcAddr = fs.String(
+			"grpc.addr",
+			getEnv("GRPC_ADDR", ":8082"),
+			"gRPC listen address",
+		)
+		consulAddr = fs.String(
+			"consul.addr",
+			getEnv("CONSUL_ADDR", ""),
+			"Consul agent address",
+		)
+		databaseURL = fs.String(
+			"database.url",
+			getEnv("DATABASE_URL", ""),
+			"Database URL",
+		)
+		retryMax = flag.Int(
+			"retry.max",
+			getEnvAsInt("RETRY_MAX", 3),
+			"per-request retries to different instances",
+		)
+		retryTimeout = flag.Duration(
+			"retry.timeout",
+			time.Duration(getEnvAsInt("RETRY_TIMEOUT", 500))*time.Millisecond,
+			"per-request timeout, including retries",
+		)
 	)
 
 	fs.Usage = usageFor(fs, os.Args[0]+" [flags]")
@@ -49,10 +72,19 @@ func main() {
 		logger = log.With(logger, "caller", log.DefaultCaller)
 	}
 
-	db, err := stdgorm.Open(sqlite.Open("gorm.db"), &stdgorm.Config{})
-	if err != nil {
-		logger.Log("err", err)
-		os.Exit(1)
+
+	var db *libgorm.DB
+	var err error
+	{
+		if *databaseURL != "" {
+			db, err = libgorm.Open(postgres.Open(*databaseURL), &libgorm.Config{})
+		} else {
+			db, err = libgorm.Open(sqlite.Open("gorm.db"), &libgorm.Config{})
+		}
+		if err != nil {
+			logger.Log("err", err)
+			os.Exit(1)
+		}
 	}
 
 	var (
@@ -70,12 +102,20 @@ func main() {
 			os.Exit(1)
 		}
 
-		_, port, _ := net.SplitHostPort(*grpcAddr)
+		host, port, err := net.SplitHostPort(*grpcAddr)
+		if err != nil {
+			logger.Log("err", err)
+			os.Exit(1)
+		}
+		if host == "" {
+			host = "localhost"
+		}
+
 		p, _ := strconv.Atoi(port)
 		asr := &api.AgentServiceRegistration{
 			ID:      uuid.NewV4().String(),
 			Name:    "tasksvc",
-			Address: "localhost",
+			Address: host,
 			Port:    p,
 		}
 
@@ -85,6 +125,7 @@ func main() {
 		defer registrar.Deregister()
 	}
 
+	db.AutoMigrate(&tasksvc.Task{})
 	taskRepository := gorm.NewTaskRepository(db)
 	authEndpoints, _ := authclient.New(client, logger, *retryMax, *retryTimeout)
 	userEndpoints, _ := userclient.New(client, logger, *retryMax, *retryTimeout)
@@ -154,4 +195,24 @@ func usageFor(fs *flag.FlagSet, short string) func() {
 		w.Flush()
 		fmt.Fprintf(os.Stderr, "\n")
 	}
+}
+
+func getEnv(key, fallback string) string {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		value = fallback
+	}
+	return value
+}
+
+func getEnvAsInt(key string, fallback int) int {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		return fallback
+	}
+
+	if v, err := strconv.Atoi(value); err == nil {
+		return v
+	}
+	return fallback
 }

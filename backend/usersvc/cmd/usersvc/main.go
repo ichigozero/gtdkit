@@ -14,6 +14,7 @@ import (
 	consulsd "github.com/go-kit/kit/sd/consul"
 	kitgrpc "github.com/go-kit/kit/transport/grpc"
 	"github.com/hashicorp/consul/api"
+	"github.com/ichigozero/gtdkit/backend/usersvc"
 	"github.com/ichigozero/gtdkit/backend/usersvc/db/gorm"
 	"github.com/ichigozero/gtdkit/backend/usersvc/pb"
 	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/userendpoint"
@@ -23,14 +24,16 @@ import (
 	"github.com/twinj/uuid"
 	"google.golang.org/grpc"
 	"gorm.io/driver/sqlite"
-	stdgorm "gorm.io/gorm"
+	"gorm.io/driver/postgres"
+	libgorm "gorm.io/gorm"
 )
 
 func main() {
 	fs := flag.NewFlagSet("usersvc", flag.ExitOnError)
 	var (
-		grpcAddr   = fs.String("grpc.addr", ":8080", "gRPC listen address")
-		consulAddr = fs.String("consul.addr", "", "Consul agent address")
+		grpcAddr    = fs.String("grpc.addr", getEnv("GRPC_ADDR", ":8080"), "gRPC listen address")
+		consulAddr  = fs.String("consul.addr", getEnv("CONSUL_ADDR", ""), "Consul agent address")
+		databaseURL = fs.String("database.url", getEnv("DATABASE_URL", ""), "Database URL")
 	)
 
 	fs.Usage = usageFor(fs, os.Args[0]+" [flags]")
@@ -43,12 +46,21 @@ func main() {
 		logger = log.With(logger, "caller", log.DefaultCaller)
 	}
 
-	db, err := stdgorm.Open(sqlite.Open("gorm.db"), &stdgorm.Config{})
-	if err != nil {
-		logger.Log("err", err)
-		os.Exit(1)
+	var db *libgorm.DB
+	var err error
+	{
+		if *databaseURL != "" {
+			db, err = libgorm.Open(postgres.Open(*databaseURL), &libgorm.Config{})
+		} else {
+			db, err = libgorm.Open(sqlite.Open("gorm.db"), &libgorm.Config{})
+		}
+		if err != nil {
+			logger.Log("err", err)
+			os.Exit(1)
+		}
 	}
 
+	db.AutoMigrate(&usersvc.User{})
 	userRepository := gorm.NewUserRepository(db)
 
 	var (
@@ -69,12 +81,20 @@ func main() {
 			os.Exit(1)
 		}
 
-		_, port, _ := net.SplitHostPort(*grpcAddr)
+		host, port, err := net.SplitHostPort(*grpcAddr)
+		if err != nil {
+			logger.Log("err", err)
+			os.Exit(1)
+		}
+		if host == "" {
+			host = "localhost"
+		}
+
 		p, _ := strconv.Atoi(port)
 		asr := &api.AgentServiceRegistration{
 			ID:      uuid.NewV4().String(),
 			Name:    "usersvc",
-			Address: "localhost",
+			Address: host,
 			Port:    p,
 		}
 
@@ -134,4 +154,12 @@ func usageFor(fs *flag.FlagSet, short string) func() {
 		w.Flush()
 		fmt.Fprintf(os.Stderr, "\n")
 	}
+}
+
+func getEnv(key, fallback string) string {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		value = fallback
+	}
+	return value
 }
