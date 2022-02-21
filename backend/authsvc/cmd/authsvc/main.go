@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
 	consulsd "github.com/go-kit/kit/sd/consul"
 	"github.com/hashicorp/consul/api"
 	"github.com/ichigozero/gtdkit/backend/authsvc/inmem"
@@ -22,6 +23,7 @@ import (
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authtransport"
 	userclient "github.com/ichigozero/gtdkit/backend/usersvc/client"
 	"github.com/oklog/oklog/pkg/group"
+	stdprometheus "github.com/prometheus/client_golang/prometheus"
 	"github.com/twinj/uuid"
 )
 
@@ -103,9 +105,26 @@ func main() {
 
 	userEndpoints, _ := userclient.New(client, logger, *retryMax, *retryTimeout)
 
+	fieldKeys := []string{"method"}
+
 	var service authservice.Service
 	{
 		service = authservice.New(authservice.NewTokenizer(), inmemClient, logger)
+		service = authservice.InstrumentingMiddleware(
+			kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
+				Namespace: "api",
+				Subsystem: "auth_service",
+				Name:      "request_count",
+				Help:      "Number of requests received.",
+			}, fieldKeys),
+			kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
+				Namespace: "api",
+				Subsystem: "auth_service",
+				Name:      "request_latency_microseconds",
+				Help:      "Total duration of requests in microseconds.",
+			}, fieldKeys),
+			service,
+		)(service)
 		service = authservice.ProxingMiddleware(
 			context.Background(),
 			userEndpoints.UserIDEndpoint,

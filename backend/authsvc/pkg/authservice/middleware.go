@@ -2,9 +2,11 @@ package authservice
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/metrics"
 	"github.com/ichigozero/gtdkit/backend/authsvc"
 	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/userendpoint"
 )
@@ -54,6 +56,54 @@ func ProxingMiddleware(ctx context.Context, userIDEndpoint, isUserExists endpoin
 	return func(next Service) Service {
 		return proxingMiddleware{next, userIDEndpoint, isUserExists}
 	}
+}
+
+func InstrumentingMiddleware(counter metrics.Counter, latency metrics.Histogram, s Service) Middleware {
+	return func(next Service) Service {
+		return instrumentingMiddleware{counter, latency, next}
+	}
+}
+
+type instrumentingMiddleware struct {
+	requestCount   metrics.Counter
+	requestLatency metrics.Histogram
+	next           Service
+}
+
+func (mw instrumentingMiddleware) Login(ctx context.Context, username, password string) (tokens map[string]string, err error) {
+	defer func(begin time.Time) {
+		mw.requestCount.With("method", "login").Add(1)
+		mw.requestLatency.With("method", "login").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mw.next.Login(ctx, username, password)
+}
+
+func (mw instrumentingMiddleware) Logout(ctx context.Context, accessUUID string) (success bool, err error) {
+	defer func(begin time.Time) {
+		mw.requestCount.With("method", "logout").Add(1)
+		mw.requestLatency.With("method", "logout").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mw.next.Logout(ctx, accessUUID)
+}
+
+func (mw instrumentingMiddleware) Refresh(ctx context.Context, accessUUID, refreshUUID string, userID uint64) (tokens map[string]string, err error) {
+	defer func(begin time.Time) {
+		mw.requestCount.With("method", "refresh").Add(1)
+		mw.requestLatency.With("method", "refresh").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mw.next.Refresh(ctx, accessUUID, refreshUUID, userID)
+}
+
+func (mw instrumentingMiddleware) Validate(ctx context.Context, accessUUID string) (v bool, err error) {
+	defer func(begin time.Time) {
+		mw.requestCount.With("method", "validate").Add(1)
+		mw.requestLatency.With("method", "validate").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mw.next.Validate(ctx, accessUUID)
 }
 
 type proxingMiddleware struct {

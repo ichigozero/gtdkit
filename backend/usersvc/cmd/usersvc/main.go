@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/go-kit/kit/log"
+	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
 	consulsd "github.com/go-kit/kit/sd/consul"
 	kitgrpc "github.com/go-kit/kit/transport/grpc"
 	"github.com/hashicorp/consul/api"
@@ -21,10 +22,11 @@ import (
 	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/userservice"
 	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/usertransport"
 	"github.com/oklog/oklog/pkg/group"
+	stdprometheus "github.com/prometheus/client_golang/prometheus"
 	"github.com/twinj/uuid"
 	"google.golang.org/grpc"
-	"gorm.io/driver/sqlite"
 	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlite"
 	libgorm "gorm.io/gorm"
 )
 
@@ -63,8 +65,29 @@ func main() {
 	db.AutoMigrate(&usersvc.User{})
 	userRepository := gorm.NewUserRepository(db)
 
+	fieldKeys := []string{"method"}
+
+	var service userservice.Service
+	{
+		service = userservice.New(userRepository, logger)
+		service = userservice.InstrumentingMiddleware(
+			kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
+				Namespace: "api",
+				Subsystem: "user_service",
+				Name:      "request_count",
+				Help:      "Number of requests received.",
+			}, fieldKeys),
+			kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
+				Namespace: "api",
+				Subsystem: "user_service",
+				Name:      "request_latency_microseconds",
+				Help:      "Total duration of requests in microseconds.",
+			}, fieldKeys),
+			service,
+		)(service)
+	}
+
 	var (
-		service    = userservice.New(userRepository, logger)
 		endpoints  = userendpoint.New(service, logger)
 		grpcServer = usertransport.NewGRPCServer(endpoints, logger)
 	)
