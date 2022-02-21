@@ -19,6 +19,7 @@ import (
 	"github.com/ichigozero/gtdkit/backend/tasksvc"
 	"github.com/ichigozero/gtdkit/backend/tasksvc/pkg/taskendpoint"
 	"github.com/ichigozero/gtdkit/backend/usersvc"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func NewHTTPHandler(endpoints taskendpoint.Set, logger log.Logger) http.Handler {
@@ -123,6 +124,7 @@ func NewHTTPHandler(endpoints taskendpoint.Set, logger log.Logger) http.Handler 
 	r.Methods("GET").Path("/task/{task_id}").Handler(taskHandler)
 	r.Methods("PUT").Path("/task/{task_id}").Handler(updateTaskHandler)
 	r.Methods("DELETE").Path("/task/{task_id}").Handler(deleteTaskHandler)
+	r.Methods("GET").Path("/metrics").Handler(promhttp.Handler())
 
 	return r
 }

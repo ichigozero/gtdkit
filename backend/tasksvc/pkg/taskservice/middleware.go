@@ -2,9 +2,11 @@ package taskservice
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/metrics"
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authendpoint"
 	"github.com/ichigozero/gtdkit/backend/tasksvc"
 	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/userendpoint"
@@ -89,6 +91,63 @@ func (mw loggingMiddleware) DeleteTask(ctx context.Context, a tasksvc.Auth, task
 			"err", err,
 		)
 	}()
+	return mw.next.DeleteTask(ctx, a, taskID)
+}
+
+func InstrumentingMiddleware(counter metrics.Counter, latency metrics.Histogram, s Service) Middleware {
+	return func(next Service) Service {
+		return instrumentingMiddleware{counter, latency, next}
+	}
+}
+
+type instrumentingMiddleware struct {
+	requestCount   metrics.Counter
+	requestLatency metrics.Histogram
+	next           Service
+}
+
+func (mw instrumentingMiddleware) CreateTask(ctx context.Context, a tasksvc.Auth, title, description string) (t tasksvc.Task, err error) {
+	defer func(begin time.Time) {
+		mw.requestCount.With("method", "create_task").Add(1)
+		mw.requestLatency.With("method", "create_task").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mw.next.CreateTask(ctx, a, title, description)
+}
+
+func (mw instrumentingMiddleware) Tasks(ctx context.Context, a tasksvc.Auth) (t []tasksvc.Task, err error) {
+	defer func(begin time.Time) {
+		mw.requestCount.With("method", "tasks").Add(1)
+		mw.requestLatency.With("method", "tasks").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mw.next.Tasks(ctx, a)
+}
+
+func (mw instrumentingMiddleware) Task(ctx context.Context, a tasksvc.Auth, taskID uint64) (t tasksvc.Task, err error) {
+	defer func(begin time.Time) {
+		mw.requestCount.With("method", "task").Add(1)
+		mw.requestLatency.With("method", "task").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mw.next.Task(ctx, a, taskID)
+}
+
+func (mw instrumentingMiddleware) UpdateTask(ctx context.Context, a tasksvc.Auth, task tasksvc.Task) (t tasksvc.Task, err error) {
+	defer func(begin time.Time) {
+		mw.requestCount.With("method", "update_task").Add(1)
+		mw.requestLatency.With("method", "update_task").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
+	return mw.next.UpdateTask(ctx, a, task)
+}
+
+func (mw instrumentingMiddleware) DeleteTask(ctx context.Context, a tasksvc.Auth, taskID uint64) (result bool, err error) {
+	defer func(begin time.Time) {
+		mw.requestCount.With("method", "delete_task").Add(1)
+		mw.requestLatency.With("method", "delete_task").Observe(time.Since(begin).Seconds())
+	}(time.Now())
+
 	return mw.next.DeleteTask(ctx, a, taskID)
 }
 

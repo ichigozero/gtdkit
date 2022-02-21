@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	kitprometheus "github.com/go-kit/kit/metrics/prometheus"
 	consulsd "github.com/go-kit/kit/sd/consul"
 	kitgrpc "github.com/go-kit/kit/transport/grpc"
 	"github.com/hashicorp/consul/api"
@@ -25,10 +26,11 @@ import (
 	"github.com/ichigozero/gtdkit/backend/tasksvc/pkg/tasktransport"
 	userclient "github.com/ichigozero/gtdkit/backend/usersvc/client"
 	"github.com/oklog/oklog/pkg/group"
+	stdprometheus "github.com/prometheus/client_golang/prometheus"
 	"github.com/twinj/uuid"
 	"google.golang.org/grpc"
-	"gorm.io/driver/sqlite"
 	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlite"
 	libgorm "gorm.io/gorm"
 )
 
@@ -71,7 +73,6 @@ func main() {
 		logger = log.With(logger, "ts", log.DefaultTimestampUTC)
 		logger = log.With(logger, "caller", log.DefaultCaller)
 	}
-
 
 	var db *libgorm.DB
 	var err error
@@ -130,9 +131,26 @@ func main() {
 	authEndpoints, _ := authclient.New(client, logger, *retryMax, *retryTimeout)
 	userEndpoints, _ := userclient.New(client, logger, *retryMax, *retryTimeout)
 
+	fieldKeys := []string{"method"}
+
 	var service taskservice.Service
 	{
 		service = taskservice.New(taskRepository, logger)
+		service = taskservice.InstrumentingMiddleware(
+			kitprometheus.NewCounterFrom(stdprometheus.CounterOpts{
+				Namespace: "api",
+				Subsystem: "task_service",
+				Name:      "request_count",
+				Help:      "Number of requests received.",
+			}, fieldKeys),
+			kitprometheus.NewSummaryFrom(stdprometheus.SummaryOpts{
+				Namespace: "api",
+				Subsystem: "task_service",
+				Name:      "request_latency_microseconds",
+				Help:      "Total duration of requests in microseconds.",
+			}, fieldKeys),
+			service,
+		)(service)
 		service = taskservice.ProxingMiddleware(
 			context.Background(),
 			authEndpoints.ValidateEndpoint,

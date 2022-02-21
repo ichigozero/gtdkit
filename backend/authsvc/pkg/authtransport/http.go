@@ -23,6 +23,7 @@ import (
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authendpoint"
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authservice"
 	"github.com/ichigozero/gtdkit/backend/usersvc"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func NewHTTPHandler(endpoints authendpoint.Set, client inmem.Client, logger log.Logger) http.Handler {
@@ -93,6 +94,7 @@ func NewHTTPHandler(endpoints authendpoint.Set, client inmem.Client, logger log.
 	r.Methods("POST").Path("/logout").Handler(logoutHandler)
 	r.Methods("POST").Path("/refresh").Handler(refreshHandler)
 	r.Methods("GET").Path("/validate").Handler(validateHandler)
+	r.Methods("GET").Path("/metrics").Handler(promhttp.Handler())
 
 	return r
 }
