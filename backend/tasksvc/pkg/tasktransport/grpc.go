@@ -4,17 +4,22 @@ import (
 	"context"
 	"errors"
 	"os"
+	"time"
 
 	stdjwt "github.com/dgrijalva/jwt-go"
 	kitjwt "github.com/go-kit/kit/auth/jwt"
+	"github.com/go-kit/kit/circuitbreaker"
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/ratelimit"
 	"github.com/go-kit/kit/transport"
 	grpctransport "github.com/go-kit/kit/transport/grpc"
 	"github.com/ichigozero/gtdkit/backend/tasksvc"
 	"github.com/ichigozero/gtdkit/backend/tasksvc/pb"
 	"github.com/ichigozero/gtdkit/backend/tasksvc/pkg/taskendpoint"
 	"github.com/ichigozero/gtdkit/backend/tasksvc/pkg/taskservice"
+	"github.com/sony/gobreaker"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 )
 
@@ -161,6 +166,8 @@ func (s *grpcServer) DeleteTask(ctx context.Context, req *pb.DeleteTaskRequest) 
 }
 
 func NewGRPCClient(conn *grpc.ClientConn, logger log.Logger) taskservice.Service {
+	limiter := ratelimit.NewErroringLimiter(rate.NewLimiter(rate.Every(time.Second), 100))
+
 	var options []grpctransport.ClientOption
 
 	var createTaskEndpoint endpoint.Endpoint
@@ -174,6 +181,11 @@ func NewGRPCClient(conn *grpc.ClientConn, logger log.Logger) taskservice.Service
 			pb.CreateTaskReply{},
 			append(options, grpctransport.ClientBefore(kitjwt.ContextToGRPC()))...,
 		).Endpoint()
+		createTaskEndpoint = limiter(createTaskEndpoint)
+		createTaskEndpoint = circuitbreaker.Gobreaker(gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "CreateTask",
+			Timeout: 30 * time.Second,
+		}))(createTaskEndpoint)
 	}
 
 	var tasksEndpoint endpoint.Endpoint
@@ -187,6 +199,11 @@ func NewGRPCClient(conn *grpc.ClientConn, logger log.Logger) taskservice.Service
 			pb.TasksReply{},
 			append(options, grpctransport.ClientBefore(kitjwt.ContextToGRPC()))...,
 		).Endpoint()
+		tasksEndpoint = limiter(tasksEndpoint)
+		tasksEndpoint = circuitbreaker.Gobreaker(gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "Tasks",
+			Timeout: 30 * time.Second,
+		}))(tasksEndpoint)
 	}
 
 	var taskEndpoint endpoint.Endpoint
@@ -200,6 +217,11 @@ func NewGRPCClient(conn *grpc.ClientConn, logger log.Logger) taskservice.Service
 			pb.TaskReply{},
 			append(options, grpctransport.ClientBefore(kitjwt.ContextToGRPC()))...,
 		).Endpoint()
+		taskEndpoint = limiter(taskEndpoint)
+		taskEndpoint = circuitbreaker.Gobreaker(gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "Task",
+			Timeout: 30 * time.Second,
+		}))(taskEndpoint)
 	}
 
 	var updateTaskEndpoint endpoint.Endpoint
@@ -213,6 +235,11 @@ func NewGRPCClient(conn *grpc.ClientConn, logger log.Logger) taskservice.Service
 			pb.UpdateTaskReply{},
 			append(options, grpctransport.ClientBefore(kitjwt.ContextToGRPC()))...,
 		).Endpoint()
+		updateTaskEndpoint = limiter(updateTaskEndpoint)
+		updateTaskEndpoint = circuitbreaker.Gobreaker(gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "UpdateTask",
+			Timeout: 30 * time.Second,
+		}))(updateTaskEndpoint)
 	}
 
 	var deleteTaskEndpoint endpoint.Endpoint
@@ -226,6 +253,11 @@ func NewGRPCClient(conn *grpc.ClientConn, logger log.Logger) taskservice.Service
 			pb.DeleteTaskReply{},
 			append(options, grpctransport.ClientBefore(kitjwt.ContextToGRPC()))...,
 		).Endpoint()
+		deleteTaskEndpoint = limiter(deleteTaskEndpoint)
+		deleteTaskEndpoint = circuitbreaker.Gobreaker(gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "DeleteTask",
+			Timeout: 30 * time.Second,
+		}))(deleteTaskEndpoint)
 	}
 
 	return taskendpoint.Set{

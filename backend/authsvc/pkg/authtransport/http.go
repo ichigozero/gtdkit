@@ -10,11 +10,14 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	stdjwt "github.com/dgrijalva/jwt-go"
 	kitjwt "github.com/go-kit/kit/auth/jwt"
+	"github.com/go-kit/kit/circuitbreaker"
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/ratelimit"
 	"github.com/go-kit/kit/transport"
 	httptransport "github.com/go-kit/kit/transport/http"
 	"github.com/gorilla/mux"
@@ -24,6 +27,8 @@ import (
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authservice"
 	"github.com/ichigozero/gtdkit/backend/usersvc"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sony/gobreaker"
+	"golang.org/x/time/rate"
 )
 
 func NewHTTPHandler(endpoints authendpoint.Set, client inmem.Client, logger log.Logger) http.Handler {
@@ -109,6 +114,8 @@ func NewHTTPClient(instance string, logger log.Logger) (authservice.Service, err
 		return nil, err
 	}
 
+	limiter := ratelimit.NewErroringLimiter(rate.NewLimiter(rate.Every(time.Second), 100))
+
 	var options []httptransport.ClientOption
 
 	var loginEndpoint endpoint.Endpoint
@@ -120,6 +127,12 @@ func NewHTTPClient(instance string, logger log.Logger) (authservice.Service, err
 			decodeHTTPLoginResponse,
 			options...,
 		).Endpoint()
+		// TODO opentracing
+		loginEndpoint = limiter(loginEndpoint)
+		loginEndpoint = circuitbreaker.Gobreaker(gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "Login",
+			Timeout: 30 * time.Second,
+		}))(loginEndpoint)
 	}
 
 	var logoutEndpoint endpoint.Endpoint
@@ -131,6 +144,11 @@ func NewHTTPClient(instance string, logger log.Logger) (authservice.Service, err
 			decodeHTTPLogoutResponse,
 			append(options, httptransport.ClientBefore(kitjwt.ContextToHTTP()))...,
 		).Endpoint()
+		logoutEndpoint = limiter(logoutEndpoint)
+		logoutEndpoint = circuitbreaker.Gobreaker(gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "Logout",
+			Timeout: 30 * time.Second,
+		}))(logoutEndpoint)
 	}
 
 	var refreshEndpoint endpoint.Endpoint
@@ -142,6 +160,11 @@ func NewHTTPClient(instance string, logger log.Logger) (authservice.Service, err
 			decodeHTTPRefreshResponse,
 			append(options, httptransport.ClientBefore(kitjwt.ContextToHTTP()))...,
 		).Endpoint()
+		refreshEndpoint = limiter(refreshEndpoint)
+		refreshEndpoint = circuitbreaker.Gobreaker(gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "Refresh",
+			Timeout: 30 * time.Second,
+		}))(refreshEndpoint)
 	}
 
 	var validateEndpoint endpoint.Endpoint
@@ -153,6 +176,11 @@ func NewHTTPClient(instance string, logger log.Logger) (authservice.Service, err
 			decodeHTTPValidateResponse,
 			options...,
 		).Endpoint()
+		validateEndpoint = limiter(validateEndpoint)
+		validateEndpoint = circuitbreaker.Gobreaker(gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "Validate",
+			Timeout: 30 * time.Second,
+		}))(validateEndpoint)
 	}
 
 	return authendpoint.Set{

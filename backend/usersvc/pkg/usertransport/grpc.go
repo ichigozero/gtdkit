@@ -3,15 +3,20 @@ package usertransport
 import (
 	"context"
 	"errors"
+	"time"
 
+	"github.com/go-kit/kit/circuitbreaker"
 	"github.com/go-kit/kit/endpoint"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/ratelimit"
 	"github.com/go-kit/kit/transport"
 	grpctransport "github.com/go-kit/kit/transport/grpc"
 	"github.com/ichigozero/gtdkit/backend/usersvc"
 	"github.com/ichigozero/gtdkit/backend/usersvc/pb"
 	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/userendpoint"
 	"github.com/ichigozero/gtdkit/backend/usersvc/pkg/userservice"
+	"github.com/sony/gobreaker"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 )
 
@@ -59,6 +64,8 @@ func (s *grpcServer) IsExists(ctx context.Context, req *pb.IsExistsRequest) (*pb
 }
 
 func NewGRPCClient(conn *grpc.ClientConn, logger log.Logger) userservice.Service {
+	limiter := ratelimit.NewErroringLimiter(rate.NewLimiter(rate.Every(time.Second), 100))
+
 	var options []grpctransport.ClientOption
 
 	var userIDEndpoint endpoint.Endpoint
@@ -72,6 +79,11 @@ func NewGRPCClient(conn *grpc.ClientConn, logger log.Logger) userservice.Service
 			pb.UserIDReply{},
 			options...,
 		).Endpoint()
+		userIDEndpoint = limiter(userIDEndpoint)
+		userIDEndpoint = circuitbreaker.Gobreaker(gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "UserID",
+			Timeout: 30 * time.Second,
+		}))(userIDEndpoint)
 	}
 
 	var isExistsEndpoint endpoint.Endpoint
@@ -85,6 +97,11 @@ func NewGRPCClient(conn *grpc.ClientConn, logger log.Logger) userservice.Service
 			pb.IsExistsReply{},
 			options...,
 		).Endpoint()
+		isExistsEndpoint = limiter(isExistsEndpoint)
+		isExistsEndpoint = circuitbreaker.Gobreaker(gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "IsExists",
+			Timeout: 30 * time.Second,
+		}))(isExistsEndpoint)
 	}
 
 	return userendpoint.Set{
