@@ -17,6 +17,7 @@ services:
     environment:
       - HTTP_ADDR=apigateway:8000
       - CONSUL_ADDR=consul:8500
+      - ACCESS_SECRET=${ACCESS_SECRET}
     ports:
       - 8000:8000
     networks:
@@ -61,6 +62,8 @@ services:
     environment:
       - HTTP_ADDR=authsvc:8081
       - CONSUL_ADDR=consul:8500
+      - ACCESS_SECRET=${ACCESS_SECRET}
+      - REFRESH_SECRET=${REFRESH_SECRET}
     ports:
       - 8081
     networks:
@@ -91,6 +94,7 @@ services:
       - GRPC_ADDR=tasksvc:8082
       - CONSUL_ADDR=consul:8500
       - DATABASE_URL=postgres://username:password@tasksvcdb:5432/tasksvc
+      - ACCESS_SECRET=${ACCESS_SECRET}
     ports:
       - 8082
     networks:

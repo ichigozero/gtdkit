@@ -13,15 +13,11 @@ func NewUserRepository(db *libgorm.DB) usersvc.UserRepository {
 	return &userRepository{db}
 }
 
-func (u *userRepository) UserID(username, password string) (uint64, error) {
+func (u *userRepository) GetUser(username string) *usersvc.User {
 	var user usersvc.User
-	u.db.Select("id").Where("name = ? AND password = ?", username, password).Find(&user)
+	u.db.Where("name = ?", username).First(&user)
 
-	if user.ID == 0 {
-		return user.ID, usersvc.ErrUserNotFound
-	}
-
-	return user.ID, nil
+	return &user
 }
 
 func (u *userRepository) IsExists(id uint64) (bool, error) {
