@@ -15,5 +15,6 @@
 # vendor/
 
 *.db
+.env*
 
 docker/volumes/

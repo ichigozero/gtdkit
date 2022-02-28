@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/ichigozero/gtdkit/backend/usersvc"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Service interface {
@@ -34,12 +35,17 @@ func (s basicService) UserID(_ context.Context, username, password string) (uint
 		return 0, usersvc.ErrInvalidArgument
 	}
 
-	uid, err := s.users.UserID(username, password)
-	if err != nil {
-		return uid, err
+	u := s.users.GetUser(username)
+	if u == nil {
+		return 0, usersvc.ErrUserNotFound
 	}
 
-	return uid, nil
+	err := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(password))
+	if err != nil {
+		return 0, usersvc.ErrUserNotFound
+	}
+
+	return u.ID, nil
 }
 
 func (s basicService) IsExists(_ context.Context, id uint64) (bool, error) {
