@@ -1,0 +1,7 @@
+#!/bin/sh
+
+ACCESS_SECRET=uV3gqXaPOQrvJCQ1CgB2QML3ZhQ66cNk
+REFRESH_SECRET=zvphqW5UVYDn7Ew8H113woAYAJhOGpyO
+RETRY_TIMEOUT=5000
+
+go run main.go --http.addr=127.0.0.1:8081 --consul.addr=127.0.0.1:8500

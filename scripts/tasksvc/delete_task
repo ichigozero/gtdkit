@@ -1,6 +1,6 @@
 #!/bin/bash
 
-curl -X "DELETE" "http://localhost:8000/task/v1/task/$2" \
-  -H 'Accept: application/json' \
-  -H 'Content-Type: application/json' \
+curl -i -X "DELETE" "http://localhost:8000/task/v1/task/$2" \
+	-H 'Accept: application/json' \
+	-H 'Content-Type: application/json' \
 	-H 'Authorization: Bearer '"$1"
