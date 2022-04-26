@@ -206,6 +206,14 @@ func claims(ctx context.Context) (tasksvc.Auth, error) {
 	return tasksvc.Auth{AccessUUID: uuid, UserID: userID}, nil
 }
 
+var (
+	_ endpoint.Failer = CreateTaskResponse{}
+	_ endpoint.Failer = TasksResponse{}
+	_ endpoint.Failer = TaskResponse{}
+	_ endpoint.Failer = UpdateTaskResponse{}
+	_ endpoint.Failer = DeleteTaskResponse{}
+)
+
 type CreateTaskRequest struct {
 	Title       string
 	Description string

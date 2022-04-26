@@ -3,9 +3,9 @@ package usersvc
 import "errors"
 
 type User struct {
-	ID       uint64 `gorm:"primaryKey"`
-	Name     string `gorm:"unique"`
-	Password string
+	ID       uint64 `json:"id" gorm:"primaryKey"`
+	Name     string `json:"name" gorm:"unique"`
+	Password string `json:"password"`
 }
 
 type UserRepository interface {
