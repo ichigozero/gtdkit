@@ -204,12 +204,10 @@ func errorEncoder(_ context.Context, err error, w http.ResponseWriter) {
 
 func err2code(err error) int {
 	switch err {
-	case kitjwt.ErrTokenExpired:
-		return http.StatusForbidden
+	case kitjwt.ErrTokenExpired, usersvc.ErrUserNotFound, authsvc.ErrUserIDContextMissing, inmem.ErrKeyNotFound:
+		return http.StatusUnauthorized
 	case usersvc.ErrInvalidArgument, authsvc.ErrInvalidArgument:
 		return http.StatusBadRequest
-	case usersvc.ErrUserNotFound, authsvc.ErrUserIDContextMissing, inmem.ErrKeyNotFound:
-		return http.StatusUnauthorized
 	}
 	return http.StatusInternalServerError
 }
