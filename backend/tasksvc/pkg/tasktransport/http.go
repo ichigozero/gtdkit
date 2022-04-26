@@ -140,16 +140,12 @@ type errorWrapper struct {
 
 func err2code(err error) int {
 	switch err {
-	case usersvc.ErrInvalidArgument:
+	case kitjwt.ErrTokenExpired:
+		return http.StatusForbidden
+	case usersvc.ErrInvalidArgument, authsvc.ErrInvalidArgument, tasksvc.ErrInvalidArgument:
 		return http.StatusBadRequest
-	case usersvc.ErrUserNotFound:
+	case usersvc.ErrUserNotFound, authsvc.ErrUserIDContextMissing:
 		return http.StatusUnauthorized
-	case authsvc.ErrInvalidArgument:
-		return http.StatusBadRequest
-	case authsvc.ErrUserIDContextMissing:
-		return http.StatusUnauthorized
-	case tasksvc.ErrInvalidArgument:
-		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
 }
@@ -207,11 +203,9 @@ func decodeHTTPDeleteTaskRequest(_ context.Context, r *http.Request) (interface{
 	}, nil
 }
 
-var (
-	// ErrBadRouting is returned when an expected path variable is missing.
-	// It always indicates programmer error.
-	ErrBadRouting = errors.New("inconsistent mapping between route and handler (programmer error)")
-)
+// ErrBadRouting is returned when an expected path variable is missing.
+// It always indicates programmer error.
+var ErrBadRouting = errors.New("inconsistent mapping between route and handler (programmer error)")
 
 func encodeHTTPGenericResponse(ctx context.Context, w http.ResponseWriter, response interface{}) error {
 	if f, ok := response.(endpoint.Failer); ok && f.Failed() != nil {

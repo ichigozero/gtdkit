@@ -3,11 +3,11 @@ package tasksvc
 import "errors"
 
 type Task struct {
-	ID          uint64
-	Title       string
-	Description string
-	Done        bool
-	UserID      uint64
+	ID          uint64 `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Done        bool   `json:"done"`
+	UserID      uint64 `json:"userId"`
 }
 
 type TaskRepository interface {

@@ -66,6 +66,11 @@ func MakeIsExistsEndpoint(s userservice.Service) endpoint.Endpoint {
 	}
 }
 
+var (
+	_ endpoint.Failer = UserIDResponse{}
+	_ endpoint.Failer = IsExistsResponse{}
+)
+
 type UserIDRequest struct {
 	Name, Password string
 }

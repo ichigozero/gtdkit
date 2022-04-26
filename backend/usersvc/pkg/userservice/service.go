@@ -36,7 +36,7 @@ func (s basicService) UserID(_ context.Context, username, password string) (uint
 	}
 
 	u := s.users.GetUser(username)
-	if u == nil {
+	if u.ID == 0 {
 		return 0, usersvc.ErrUserNotFound
 	}
 

@@ -159,6 +159,13 @@ func MakeValidateEndpoint(s authservice.Service) endpoint.Endpoint {
 	}
 }
 
+var (
+	_ endpoint.Failer = LoginResponse{}
+	_ endpoint.Failer = LogoutResponse{}
+	_ endpoint.Failer = RefreshResponse{}
+	_ endpoint.Failer = ValidateResponse{}
+)
+
 type LoginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`

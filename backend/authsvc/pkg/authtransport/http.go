@@ -204,18 +204,34 @@ func errorEncoder(_ context.Context, err error, w http.ResponseWriter) {
 
 func err2code(err error) int {
 	switch err {
-	case usersvc.ErrInvalidArgument:
+	case kitjwt.ErrTokenExpired:
+		return http.StatusForbidden
+	case usersvc.ErrInvalidArgument, authsvc.ErrInvalidArgument:
 		return http.StatusBadRequest
-	case usersvc.ErrUserNotFound:
-		return http.StatusUnauthorized
-	case authsvc.ErrInvalidArgument:
-		return http.StatusBadRequest
-	case authsvc.ErrUserIDContextMissing:
-		return http.StatusUnauthorized
-	case inmem.ErrKeyNotFound:
+	case usersvc.ErrUserNotFound, authsvc.ErrUserIDContextMissing, inmem.ErrKeyNotFound:
 		return http.StatusUnauthorized
 	}
 	return http.StatusInternalServerError
+}
+
+func errorDecoder(r *http.Response) error {
+	var w errorWrapper
+	if err := json.NewDecoder(r.Body).Decode(&w); err != nil {
+		return err
+	}
+
+	switch w.Error {
+	case authsvc.ErrInvalidArgument.Error():
+		return authsvc.ErrInvalidArgument
+	case usersvc.ErrUserNotFound.Error():
+		return usersvc.ErrUserNotFound
+	case authsvc.ErrUserIDContextMissing.Error():
+		return authsvc.ErrUserIDContextMissing
+	case inmem.ErrKeyNotFound.Error():
+		return inmem.ErrKeyNotFound
+	}
+
+	return errors.New(w.Error)
 }
 
 type errorWrapper struct {
@@ -230,7 +246,7 @@ func decodeHTTPLoginRequest(_ context.Context, r *http.Request) (interface{}, er
 
 func decodeHTTPLoginResponse(_ context.Context, r *http.Response) (interface{}, error) {
 	if r.StatusCode != http.StatusOK {
-		return nil, errors.New(r.Status)
+		return nil, errorDecoder(r)
 	}
 	var resp authendpoint.LoginResponse
 	err := json.NewDecoder(r.Body).Decode(&resp)
@@ -243,7 +259,7 @@ func decodeHTTPLogoutRequest(_ context.Context, r *http.Request) (interface{}, e
 
 func decodeHTTPLogoutResponse(_ context.Context, r *http.Response) (interface{}, error) {
 	if r.StatusCode != http.StatusOK {
-		return nil, errors.New(r.Status)
+		return nil, errorDecoder(r)
 	}
 	var resp authendpoint.LogoutResponse
 	err := json.NewDecoder(r.Body).Decode(&resp)
@@ -256,7 +272,7 @@ func decodeHTTPRefreshRequest(_ context.Context, r *http.Request) (interface{}, 
 
 func decodeHTTPRefreshResponse(_ context.Context, r *http.Response) (interface{}, error) {
 	if r.StatusCode != http.StatusOK {
-		return nil, errors.New(r.Status)
+		return nil, errorDecoder(r)
 	}
 	var resp authendpoint.RefreshResponse
 	err := json.NewDecoder(r.Body).Decode(&resp)
@@ -271,7 +287,7 @@ func decodeHTTPValidateRequest(_ context.Context, r *http.Request) (interface{},
 
 func decodeHTTPValidateResponse(_ context.Context, r *http.Response) (interface{}, error) {
 	if r.StatusCode != http.StatusOK {
-		return nil, errors.New(r.Status)
+		return nil, errorDecoder(r)
 	}
 	var resp authendpoint.ValidateResponse
 	err := json.NewDecoder(r.Body).Decode(&resp)
