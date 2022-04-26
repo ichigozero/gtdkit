@@ -140,12 +140,10 @@ type errorWrapper struct {
 
 func err2code(err error) int {
 	switch err {
-	case kitjwt.ErrTokenExpired:
-		return http.StatusForbidden
+	case kitjwt.ErrTokenExpired, usersvc.ErrUserNotFound, authsvc.ErrUserIDContextMissing:
+		return http.StatusUnauthorized
 	case usersvc.ErrInvalidArgument, authsvc.ErrInvalidArgument, tasksvc.ErrInvalidArgument:
 		return http.StatusBadRequest
-	case usersvc.ErrUserNotFound, authsvc.ErrUserIDContextMissing:
-		return http.StatusUnauthorized
 	}
 	return http.StatusInternalServerError
 }
