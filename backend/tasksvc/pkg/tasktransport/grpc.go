@@ -3,7 +3,6 @@ package tasktransport
 import (
 	"context"
 	"errors"
-	"os"
 	"time"
 
 	stdjwt "github.com/dgrijalva/jwt-go"
@@ -14,6 +13,7 @@ import (
 	"github.com/go-kit/kit/ratelimit"
 	"github.com/go-kit/kit/transport"
 	grpctransport "github.com/go-kit/kit/transport/grpc"
+	"github.com/ichigozero/gtdkit/backend/authsvc"
 	"github.com/ichigozero/gtdkit/backend/tasksvc"
 	"github.com/ichigozero/gtdkit/backend/tasksvc/pb"
 	"github.com/ichigozero/gtdkit/backend/tasksvc/pkg/taskendpoint"
@@ -38,7 +38,7 @@ func NewGRPCServer(endpoints taskendpoint.Set, logger log.Logger) pb.TaskSVCServ
 	}
 
 	kf := func(token *stdjwt.Token) (interface{}, error) {
-		return []byte(os.Getenv("ACCESS_SECRET")), nil
+		return []byte(authsvc.AccessSecret), nil
 	}
 
 	var createTaskEndpoint endpoint.Endpoint

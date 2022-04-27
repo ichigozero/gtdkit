@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/go-kit/kit/transport"
 	httptransport "github.com/go-kit/kit/transport/http"
 	"github.com/gorilla/mux"
+	"github.com/gorilla/securecookie"
 	"github.com/ichigozero/gtdkit/backend/authsvc"
 	"github.com/ichigozero/gtdkit/backend/authsvc/inmem"
 	"github.com/ichigozero/gtdkit/backend/authsvc/pkg/authendpoint"
@@ -40,14 +40,14 @@ func NewHTTPHandler(endpoints authendpoint.Set, client inmem.Client, logger log.
 	loginHandler := httptransport.NewServer(
 		endpoints.LoginEndpoint,
 		decodeHTTPLoginRequest,
-		encodeHTTPGenericResponse,
+		encodeHTTPLoginResponse,
 		options...,
 	)
 
 	var logoutEndpoint endpoint.Endpoint
 	{
 		kf := func(token *stdjwt.Token) (interface{}, error) {
-			return []byte(os.Getenv("ACCESS_SECRET")), nil
+			return []byte(authsvc.AccessSecret), nil
 		}
 
 		logoutEndpoint = endpoints.LogoutEndpoint
@@ -68,7 +68,7 @@ func NewHTTPHandler(endpoints authendpoint.Set, client inmem.Client, logger log.
 	var refreshEndpoint endpoint.Endpoint
 	{
 		kf := func(token *stdjwt.Token) (interface{}, error) {
-			return []byte(os.Getenv("REFRESH_SECRET")), nil
+			return []byte(authsvc.RefreshSecret), nil
 		}
 
 		refreshEndpoint = endpoints.RefreshEndpoint
@@ -82,7 +82,7 @@ func NewHTTPHandler(endpoints authendpoint.Set, client inmem.Client, logger log.
 	refreshHandler := httptransport.NewServer(
 		refreshEndpoint,
 		decodeHTTPRefreshRequest,
-		encodeHTTPGenericResponse,
+		encodeHTTPRefreshResponse,
 		append(options, httptransport.ServerBefore(kitjwt.HTTPToContext()))...,
 	)
 
@@ -248,6 +248,7 @@ func decodeHTTPLoginResponse(_ context.Context, r *http.Response) (interface{}, 
 	}
 	var resp authendpoint.LoginResponse
 	err := json.NewDecoder(r.Body).Decode(&resp)
+
 	return resp, err
 }
 
@@ -312,4 +313,76 @@ func encodeHTTPGenericResponse(ctx context.Context, w http.ResponseWriter, respo
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	return json.NewEncoder(w).Encode(response)
+}
+
+func encodeHTTPLoginResponse(ctx context.Context, w http.ResponseWriter, response interface{}) error {
+	if f, ok := response.(endpoint.Failer); ok && f.Failed() != nil {
+		errorEncoder(ctx, f.Failed(), w)
+		return nil
+	}
+
+	resp := response.(authendpoint.LoginResponse)
+	if resp.Err != nil {
+		errorEncoder(ctx, resp.Err, w)
+		return nil
+	}
+
+	ck, err := encodeCookie(resp.Tokens["refresh"])
+	if err != nil {
+		errorEncoder(ctx, err, w)
+		return nil
+	}
+
+	http.SetCookie(w, ck)
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	return json.NewEncoder(w).Encode(response)
+}
+
+func encodeHTTPRefreshResponse(ctx context.Context, w http.ResponseWriter, response interface{}) error {
+	if f, ok := response.(endpoint.Failer); ok && f.Failed() != nil {
+		errorEncoder(ctx, f.Failed(), w)
+		return nil
+	}
+
+	resp := response.(authendpoint.RefreshResponse)
+	if resp.Err != nil {
+		errorEncoder(ctx, resp.Err, w)
+		return nil
+	}
+
+	ck, err := encodeCookie(resp.Tokens["refresh"])
+	if err != nil {
+		errorEncoder(ctx, err, w)
+		return nil
+	}
+
+	http.SetCookie(w, ck)
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	return json.NewEncoder(w).Encode(response)
+}
+
+func encodeCookie(value string) (*http.Cookie, error) {
+	var secure bool
+	if authsvc.AppEnv == "production" {
+		secure = true
+	}
+
+	s := securecookie.New([]byte(authsvc.CookieHashKey), []byte(authsvc.CookieBlockKey))
+
+	encoded, err := s.Encode("refreshToken", value)
+	if err != nil {
+		return nil, err
+	}
+
+	return &http.Cookie{
+		Name:     "refreshToken",
+		Value:    encoded,
+		Path:     "/",
+		Domain:   "127.0.0.1",
+		MaxAge:   int(authservice.RefreshTokenExpiry().Seconds()),
+		Secure:   secure,
+		HttpOnly: true,
+	}, nil
 }

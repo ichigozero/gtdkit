@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/go-kit/kit v0.11.0
+	github.com/gorilla/securecookie v1.1.1
 	github.com/hashicorp/consul/api v1.8.1
 	github.com/oklog/oklog v0.3.2
 	github.com/prometheus/client_golang v1.11.0

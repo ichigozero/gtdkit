@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"strconv"
 
 	stdjwt "github.com/dgrijalva/jwt-go"
@@ -29,7 +28,7 @@ func NewHTTPHandler(endpoints taskendpoint.Set, logger log.Logger) http.Handler 
 	}
 
 	kf := func(token *stdjwt.Token) (interface{}, error) {
-		return []byte(os.Getenv("ACCESS_SECRET")), nil
+		return []byte(authsvc.AccessSecret), nil
 	}
 
 	var createTaskEndpoint endpoint.Endpoint

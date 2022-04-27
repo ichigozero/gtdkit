@@ -1,10 +1,10 @@
 package authservice
 
 import (
-	"os"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/ichigozero/gtdkit/backend/authsvc"
 	"github.com/twinj/uuid"
 )
 
@@ -50,7 +50,7 @@ var (
 
 func generateAccessToken(userID uint64) (*AccessToken, error) {
 	id := uuidV4().String()
-	expiry := time.Now().Add(time.Minute * 30).Unix()
+	expiry := time.Now().Add(AccessTokenExpiry()).Unix()
 
 	claims := jwt.MapClaims{
 		"uuid":    id,
@@ -59,7 +59,7 @@ func generateAccessToken(userID uint64) (*AccessToken, error) {
 	}
 
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	hash, err := t.SignedString([]byte(os.Getenv("ACCESS_SECRET")))
+	hash, err := t.SignedString([]byte(authsvc.AccessSecret))
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func generateAccessToken(userID uint64) (*AccessToken, error) {
 
 func generateRefreshToken(userID uint64, accessUUID string) (*RefreshToken, error) {
 	refreshUUID := uuidV5(uuid.NameSpaceURL, accessUUID).String()
-	expiry := time.Now().Add(time.Hour * 24 * 7).Unix()
+	expiry := time.Now().Add(RefreshTokenExpiry()).Unix()
 
 	claims := jwt.MapClaims{
 		"access_uuid":  accessUUID,
@@ -79,10 +79,18 @@ func generateRefreshToken(userID uint64, accessUUID string) (*RefreshToken, erro
 	}
 
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	hash, err := t.SignedString([]byte(os.Getenv("REFRESH_SECRET")))
+	hash, err := t.SignedString([]byte(authsvc.RefreshSecret))
 	if err != nil {
 		return nil, err
 	}
 
 	return &RefreshToken{accessUUID, refreshUUID, hash}, nil
+}
+
+func AccessTokenExpiry() time.Duration {
+	return time.Minute * 30
+}
+
+func RefreshTokenExpiry() time.Duration {
+	return time.Hour * 24 * 7
 }
